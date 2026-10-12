@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>bell</AssemblyName>
+    <AssemblyTitle>Bellboard CLI</AssemblyTitle>
+    <RootNamespace>Bellboard.Cli</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bellboard.Tests" />
+    <Compile Include="..\Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\skills\bellboard\SKILL.md" LogicalName="bellboard.SKILL.md" />
+    <EmbeddedResource Include="pi-extension.ts" LogicalName="bellboard.pi-extension.ts" />
+  </ItemGroup>
+
+</Project>

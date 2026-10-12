@@ -1,0 +1,493 @@
+<Window x:Class="Bellboard.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bellboard" Width="1320" Height="820" MinWidth="640" MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource ChromeBg}"
+        Foreground="{StaticResource FgStrong}"
+        FontFamily="{StaticResource UiFont}"
+        Icon="pack://application:,,,/bellboard.ico"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <!-- Our own title bar: the caption area is the top 40 px; controls in it opt in to clicks. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0,0,0,1" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="Taskbar"/>
+    </Window.TaskbarItemInfo>
+
+    <Window.Resources>
+        <!-- Per-item menu: its DataContext is the workspace that was right-clicked. -->
+        <ContextMenu x:Key="WorkspaceMenu" x:Shared="False">
+            <MenuItem Header="Finish agent…" Tag="&#xE99A;" Click="FinishAgent_Click" Visibility="{Binding IsAgent, Converter={StaticResource B2V}}"/>
+            <MenuItem Header="{Binding PinMenuText}" Tag="&#xE718;" Click="PinWorkspace_Click"/>
+            <MenuItem Header="Rename" Tag="&#xE8AC;" InputGestureText="Ctrl+Shift+R" Click="RenameMenu_Click"/>
+            <MenuItem Header="Open folder in Explorer" Tag="&#xE838;" Click="OpenInExplorer_Click"/>
+            <MenuItem Header="Copy path" Tag="&#xE8C8;" Click="CopyPath_Click"/>
+            <MenuItem Header="Mark as read" Tag="&#xE8FB;" Click="MarkWorkspaceRead_Click"/>
+            <MenuItem Header="{Binding MuteMenuText}" Tag="&#xE74F;" Click="MuteWorkspace_Click"/>
+            <MenuItem Header="Broadcast input to its terminals" Tag="&#xE789;" Click="BroadcastWorkspace_Click"/>
+            <Separator/>
+            <MenuItem Header="Close workspace" Tag="&#xE711;" Style="{StaticResource DangerMenuItem}" Click="CloseWorkspaceMenu_Click"/>
+        </ContextMenu>
+        <Style x:Key="WorkspaceItemWithMenu" TargetType="ListBoxItem" BasedOn="{StaticResource WorkspaceItem}">
+            <Setter Property="ContextMenu" Value="{StaticResource WorkspaceMenu}"/>
+        </Style>
+
+        <!-- Git branch, as a stroked icon (the icon font has none). -->
+        <Geometry x:Key="BranchIcon">M6,3 L6,15 M18,9 A9,9 0 0 1 9,18 M21,6 A3,3 0 1 1 15,6 A3,3 0 1 1 21,6 M9,18 A3,3 0 1 1 3,18 A3,3 0 1 1 9,18</Geometry>
+
+        <!-- Status / pills / progress / log / notice lines shared by both kinds of row. -->
+        <DataTemplate x:Key="RowExtras">
+            <StackPanel>
+                <TextBlock Text="{Binding PortsText}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource PortFg}" Margin="0,3,0,0"
+                           TextTrimming="CharacterEllipsis" Visibility="{Binding HasPorts, Converter={StaticResource B2V}}"/>
+                <WrapPanel Margin="0,5,0,0" Visibility="{Binding HasPills, Converter={StaticResource B2V}}">
+                <Border Background="#2172B4FF" CornerRadius="999" Padding="8,2,8,3" Margin="0,0,4,3" Visibility="{Binding HasSubagents, Converter={StaticResource B2V}}"
+                        ToolTip="Claude Code subagents running in this workspace">
+                    <TextBlock Text="{Binding SubagentsText}" FontSize="10.5" FontWeight="Medium" Foreground="{StaticResource Blue}"/>
+                </Border>
+                <ItemsControl ItemsSource="{Binding StatusItems}" Visibility="{Binding HasStatus, Converter={StaticResource B2V}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{Binding Fill}" CornerRadius="999" Padding="8,2,8,3" Margin="0,0,4,3" ToolTip="{Binding Key}">
+                                <TextBlock Text="{Binding Label}" FontSize="10.5" FontWeight="Medium" Foreground="{Binding Stroke}"/>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </WrapPanel>
+                <StackPanel Margin="0,5,0,0" Visibility="{Binding HasProgressBar, Converter={StaticResource B2V}}">
+                    <TextBlock Text="{Binding ProgressText2}" FontSize="10.5" Foreground="{StaticResource Faint}" Margin="0,0,0,3"/>
+                    <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Style="{StaticResource ThinProgress}"/>
+                </StackPanel>
+                <DockPanel Margin="0,4,0,0" Visibility="{Binding HasLog, Converter={StaticResource B2V}}">
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding LastLog.Glyph}" Foreground="{Binding LastLog.Brush}" FontSize="11" FontWeight="Bold" Width="13"/>
+                    <TextBlock Text="{Binding LastLog.Text}" Foreground="{StaticResource Muted}" FontSize="11.5" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+                <TextBlock Text="{Binding LastNotice}" FontSize="11.5" Foreground="{StaticResource AccentSoft}" Margin="0,4,0,0" LineHeight="16"
+                           TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding HasNotice, Converter={StaticResource B2V}}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Name, or the inline rename box. -->
+        <DataTemplate x:Key="RowName">
+            <Grid>
+                <DockPanel Visibility="{Binding NotEditing, Converter={StaticResource B2V}}">
+                    <TextBlock DockPanel.Dock="Right" Text="&#xE718;" FontFamily="{StaticResource IconFont}" FontSize="10.5" Foreground="{StaticResource Muted}" Margin="6,3,0,0"
+                               ToolTip="Pinned: stays at the top and doesn't close until unpinned" Visibility="{Binding Pinned, Converter={StaticResource B2V}}"/>
+                    <TextBlock DockPanel.Dock="Right" Text="&#xE74F;" FontFamily="{StaticResource IconFont}" FontSize="10.5" Foreground="{StaticResource Faint}" Margin="6,3,0,0"
+                               ToolTip="Notifications muted" Visibility="{Binding Muted, Converter={StaticResource B2V}}"/>
+                    <TextBlock FontSize="13" FontWeight="Medium" Foreground="{StaticResource FgStrong}" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Name, Mode=OneWay}"/><Run Text="{Binding PanesText, Mode=OneWay}" FontSize="10.5" FontWeight="Normal" Foreground="{StaticResource Faint}"/>
+                    </TextBlock>
+                </DockPanel>
+                <TextBox x:Name="RenameBox" Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource AddressBox}"
+                         Margin="-4,-3,0,-3" Padding="4,1" FontSize="13"
+                         Visibility="{Binding IsEditing, Converter={StaticResource B2V}}"
+                         KeyDown="RenameBox_KeyDown" LostKeyboardFocus="RenameBox_LostFocus"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Right edge: the workspace's Ctrl+number, or a pulsing dot while it wants you. -->
+        <DataTemplate x:Key="RowRight">
+            <Grid Margin="6,6,1,0" VerticalAlignment="Top">
+                <TextBlock Text="{Binding IndexText}" FontSize="11" Foreground="{StaticResource Faint}" ToolTip="Ctrl + this number"
+                           Visibility="{Binding ShowIndexNoRing, Converter={StaticResource B2V}}"/>
+                <Grid Width="9" Height="9" Margin="0,3,0,0" Visibility="{Binding ShowRing, Converter={StaticResource B2V}}" ToolTip="Needs attention">
+                    <Ellipse Fill="{StaticResource Accent}" RenderTransformOrigin="0.5,0.5" Opacity="0.55">
+                        <Ellipse.RenderTransform><ScaleTransform/></Ellipse.RenderTransform>
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" From="1" To="2.5" Duration="0:0:1.8"/>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="1" To="2.5" Duration="0:0:1.8"/>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.55" To="0" Duration="0:0:1.26"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                    <Ellipse Fill="{StaticResource Accent}"/>
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
+        <!-- A workspace: shell tile, name, folder · branch. -->
+        <DataTemplate x:Key="WorkspaceRow">
+            <Grid Margin="9,8,9,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource KindBadge}" Background="{Binding Badge.Background}" VerticalAlignment="Top" Margin="0,1,10,0" ToolTip="{Binding Badge.Env}">
+                    <TextBlock Text="{Binding Badge.Text}" Foreground="{Binding Badge.Foreground}" Style="{StaticResource KindBadgeText}"/>
+                </Border>
+                <StackPanel Grid.Column="1">
+                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowName}"/>
+                    <TextBlock Text="{Binding Meta}" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <DockPanel Margin="0,5,0,0" Visibility="{Binding HasAgentLine, Converter={StaticResource B2V}}">
+                        <Ellipse DockPanel.Dock="Left" Width="6" Height="6" Fill="{Binding AgentBrush}" VerticalAlignment="Center" Margin="0,1,7,0"/>
+                        <TextBlock Text="{Binding AgentText}" FontSize="11.5" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowExtras}"/>
+                </StackPanel>
+                <ContentPresenter Grid.Column="2" Content="{Binding}" ContentTemplate="{StaticResource RowRight}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- An agent: status tile (working / waiting / done), name, "Claude Code · Waiting for you · 4m". -->
+        <DataTemplate x:Key="AgentRow">
+            <Grid Margin="9,8,9,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid Width="32" Height="26" VerticalAlignment="Top" Margin="0,1,10,0">
+                    <Border CornerRadius="7" Background="#2172B4FF" Visibility="{Binding AgentWorking, Converter={StaticResource B2V}}" ToolTip="Working">
+                        <Ellipse Width="12" Height="12" Stroke="{StaticResource Blue}" StrokeThickness="2" StrokeDashArray="4.2 1.8" RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform><RotateTransform/></Ellipse.RenderTransform>
+                            <Ellipse.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="360" Duration="0:0:0.8"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Ellipse.Triggers>
+                        </Ellipse>
+                    </Border>
+                    <Border CornerRadius="7" Background="{StaticResource AccentTint}" Visibility="{Binding AgentWaiting, Converter={StaticResource B2V}}" ToolTip="Waiting for you">
+                        <TextBlock Text="&#xEA8F;" FontFamily="{StaticResource IconFont}" FontSize="13" Foreground="{StaticResource Accent}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.15">
+                            <TextBlock.RenderTransform><RotateTransform/></TextBlock.RenderTransform>
+                            <TextBlock.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" Duration="0:0:2">
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0" Value="0"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0.2" Value="16"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0.4" Value="-13"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0.6" Value="8"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:0.8" Value="-4"/>
+                                                <LinearDoubleKeyFrame KeyTime="0:0:1.1" Value="0"/>
+                                            </DoubleAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </TextBlock.Triggers>
+                        </TextBlock>
+                    </Border>
+                    <Border CornerRadius="7" Background="#1F5FD39A" Visibility="{Binding AgentDone, Converter={StaticResource B2V}}" ToolTip="Done">
+                        <TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="13" Foreground="{StaticResource Green}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <Border CornerRadius="7" Background="{StaticResource Bg3}" Visibility="{Binding AgentIdle, Converter={StaticResource B2V}}" ToolTip="Idle">
+                        <TextBlock Text="&#xE99A;" FontFamily="{StaticResource IconFont}" FontSize="13" Foreground="{StaticResource Muted}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </Grid>
+                <StackPanel Grid.Column="1">
+                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowName}"/>
+                    <TextBlock FontSize="11.5" Foreground="{StaticResource Faint}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding AgentWho, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding AgentStateText, Mode=OneWay}">
+                            <Run.Style>
+                                <Style TargetType="Run">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AgentWaiting}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Run.Style>
+                        </Run><Run Text=" · "/><Run Text="{Binding AgentAge, Mode=OneWay}"/>
+                    </TextBlock>
+                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowExtras}"/>
+                </StackPanel>
+                <ContentPresenter Grid.Column="2" Content="{Binding}" ContentTemplate="{StaticResource RowRight}"/>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ===== Title bar ===== -->
+        <Border Grid.Row="0" Background="{StaticResource ChromeBg}" BorderBrush="{StaticResource Divider}" BorderThickness="0,0,0,1">
+            <!-- Laid out in code (LayoutTitleBar): the search box stays centred, and parts of the crumb give way when narrow. -->
+            <Grid x:Name="TitleBar" SizeChanged="TitleBar_SizeChanged">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel x:Name="TitleLeft" Orientation="Horizontal" Margin="6,0,0,0" VerticalAlignment="Center">
+                    <Button x:Name="SidebarButton" Style="{StaticResource IconButton}" WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,6,0"
+                            ToolTip="Hide the sidebar (Ctrl+Shift+B)" Click="SidebarButton_Click">
+                        <Path Data="M5,3 H19 A2,2 0 0 1 21,5 V19 A2,2 0 0 1 19,21 H5 A2,2 0 0 1 3,19 V5 A2,2 0 0 1 5,3 Z M9,3 V21" Width="15" Height="15" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.75" StrokeLineJoin="Round"/>
+                    </Button>
+                    <Border Width="24" Height="24" CornerRadius="7" Background="{StaticResource LogoTileBrush}">
+                        <Grid Width="16" Height="16">
+                            <Path Fill="#1F1400" Stretch="Uniform" Width="12.4" Height="14" VerticalAlignment="Top" Margin="0,1.6,0,0"
+                                  Data="M12 3.2c-3.3 0-5.6 2.6-5.6 5.9v3.4l-1.6 3.1c-.4.7.1 1.5.9 1.5h12.6c.8 0 1.3-.8.9-1.5l-1.6-3.1V9.1c0-3.3-2.3-5.9-5.6-5.9Z"/>
+                            <Ellipse Fill="#1F1400" Width="2.6" Height="2.6" VerticalAlignment="Bottom" Margin="0,0,0,0.3"/>
+                        </Grid>
+                    </Border>
+                    <TextBlock x:Name="TitleWordmark" Text="Bellboard" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource FgStrong}" Margin="10,0,0,1" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CrumbSep" Text="/" FontSize="13" Foreground="{StaticResource Faint}" Margin="10,0,0,1" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CrumbName" FontSize="13" Foreground="{StaticResource Muted}" Margin="10,0,0,1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="180"/>
+                    <TextBlock x:Name="CrumbEnv" FontSize="13" Foreground="{StaticResource Faint}" Margin="8,0,0,1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="220"/>
+                </StackPanel>
+
+                <Button x:Name="SearchButton" Grid.Column="1" HorizontalAlignment="Left" Style="{StaticResource TitleSearch}" WindowChrome.IsHitTestVisibleInChrome="True" Click="SearchButton_Click"
+                        ToolTip="Search workspaces and commands (Ctrl+Shift+P)">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                        <StackPanel x:Name="SearchKeys" DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Border Style="{StaticResource Kbd}"><TextBlock Text="Ctrl" Style="{StaticResource KbdText}"/></Border>
+                            <Border Style="{StaticResource Kbd}"><TextBlock Text="⇧" Style="{StaticResource KbdText}"/></Border>
+                            <Border Style="{StaticResource Kbd}"><TextBlock Text="P" Style="{StaticResource KbdText}"/></Border>
+                        </StackPanel>
+                        <TextBlock x:Name="SearchLabel" Text="Search workspaces and commands" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                </Button>
+
+                <StackPanel x:Name="TitleRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="BellButton" Style="{StaticResource IconButton}" WindowChrome.IsHitTestVisibleInChrome="True" VerticalAlignment="Center"
+                            ToolTip="Inbox: agents and notifications (Ctrl+Shift+I)" Click="BellButton_Click">
+                        <Grid>
+                            <TextBlock x:Name="BellGlyph" Text="&#xEA8F;" FontFamily="{StaticResource IconFont}"/>
+                            <Border x:Name="BellBadge" Background="{StaticResource Accent}" BorderBrush="{StaticResource ChromeBg}" BorderThickness="2" CornerRadius="9"
+                                    MinWidth="16" Height="16" Padding="3,0" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-9,-11,0" Visibility="Collapsed">
+                                <TextBlock x:Name="BellCount" FontFamily="{StaticResource UiFont}" FontSize="9.5" FontWeight="Bold" Foreground="{StaticResource OnAccent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                    </Button>
+                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
+                        <Button x:Name="MinButton" Style="{StaticResource WindowButton}" Content="&#xE921;" WindowChrome.IsHitTestVisibleInChrome="True" Click="MinButton_Click" ToolTip="Minimize"/>
+                        <Button x:Name="MaxButton" Style="{StaticResource WindowButton}" Content="&#xE922;" WindowChrome.IsHitTestVisibleInChrome="True" Click="MaxButton_Click" ToolTip="Maximize"/>
+                        <Button x:Name="CloseButton" Style="{StaticResource CloseWindowButton}" Content="&#xE8BB;" WindowChrome.IsHitTestVisibleInChrome="True" Click="CloseButton_Click" ToolTip="Close"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== Body ===== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="256" MinWidth="0"/>
+                <ColumnDefinition Width="1"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar: workspaces, agents, settings -->
+            <DockPanel x:Name="Sidebar" Grid.Column="0" Background="{StaticResource SidebarBg}">
+                <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="8">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE765;" ToolTip="Keyboard shortcuts" Click="Shortcuts_Click" Margin="4,0,0,0"/>
+                        <Button Style="{StaticResource SidebarButton}" Click="Settings_Click">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="&#xE713;" FontFamily="{StaticResource IconFont}" FontSize="14" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Border Style="{StaticResource Kbd}"><TextBlock Text="Ctrl" Style="{StaticResource KbdText}"/></Border>
+                                    <Border Style="{StaticResource Kbd}"><TextBlock Text="," Style="{StaticResource KbdText}"/></Border>
+                                </StackPanel>
+                                <TextBlock Text="Settings" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Button>
+                    </DockPanel>
+                </Border>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,10,10,12">
+                    <StackPanel>
+                        <DockPanel Margin="20,4,2,6">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="FolderButton" Style="{StaticResource IconButtonSm}" Content="&#xE8B7;" ToolTip="Open a folder as a workspace" Click="FolderButton_Click"/>
+                                <Button x:Name="NewWorkspaceButton" Style="{StaticResource IconButtonSm}" Content="&#xE710;" Margin="2,0,0,0"
+                                        ToolTip="New workspace in this folder (Ctrl+Shift+T). Right-click to pick a shell: WSL, SSH, cmd…"
+                                        Click="NewWorkspace_Click" MouseRightButtonUp="NewWorkspace_RightClick"/>
+                            </StackPanel>
+                            <TextBlock Text="WORKSPACES" Style="{StaticResource GroupLabel}"/>
+                        </DockPanel>
+                        <ListBox x:Name="WorkspaceList" Background="Transparent" BorderThickness="0" Padding="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 ItemContainerStyle="{StaticResource WorkspaceItemWithMenu}" ItemTemplate="{StaticResource WorkspaceRow}"
+                                 SelectionChanged="WorkspaceList_SelectionChanged"
+                                 MouseDoubleClick="WorkspaceList_MouseDoubleClick"
+                                 AllowDrop="True" Drop="WorkspaceList_Drop"
+                                 PreviewMouseLeftButtonDown="WorkspaceList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="WorkspaceList_PreviewMouseMove"/>
+
+                        <TextBlock Text="AGENTS" Style="{StaticResource GroupLabel}" Margin="20,18,0,6"/>
+                        <ListBox x:Name="AgentWorkspaceList" Background="Transparent" BorderThickness="0" Padding="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 ItemContainerStyle="{StaticResource WorkspaceItemWithMenu}" ItemTemplate="{StaticResource AgentRow}"
+                                 SelectionChanged="WorkspaceList_SelectionChanged"
+                                 MouseDoubleClick="WorkspaceList_MouseDoubleClick"
+                                 AllowDrop="True" Drop="WorkspaceList_Drop"
+                                 PreviewMouseLeftButtonDown="WorkspaceList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="WorkspaceList_PreviewMouseMove"/>
+                        <TextBlock x:Name="AgentsEmpty" Text="Hand off a task and keep working. Agents run on their own branch." FontSize="12"
+                                   Foreground="{StaticResource Faint}" Margin="20,2,10,8" TextWrapping="Wrap" LineHeight="18"/>
+                        <Button Style="{StaticResource DashedButton}" Click="NewAgent_Click" Margin="10,4,0,0" ToolTip="Hand a task to a coding agent on its own branch">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="&#xE99A;" FontFamily="{StaticResource IconFont}" FontSize="14" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Border Style="{StaticResource Kbd}"><TextBlock Text="Ctrl" Style="{StaticResource KbdText}"/></Border>
+                                    <Border Style="{StaticResource Kbd}"><TextBlock Text="⇧" Style="{StaticResource KbdText}"/></Border>
+                                    <Border Style="{StaticResource Kbd}"><TextBlock Text="A" Style="{StaticResource KbdText}"/></Border>
+                                </StackPanel>
+                                <TextBlock Text="New agent" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch" Background="{StaticResource Divider}" Focusable="False"
+                          ResizeBehavior="PreviousAndNext" DragCompleted="SidebarSplitter_DragCompleted"/>
+
+            <DockPanel Grid.Column="2">
+                <!-- Status bar: where the focused pane runs, and the terminal look (click to change). -->
+                <Border x:Name="StatusBar" SizeChanged="StatusBar_SizeChanged" DockPanel.Dock="Bottom" Height="26" Background="{StaticResource ChromeBg}" BorderBrush="{StaticResource Divider}"
+                        BorderThickness="0,1,0,0" Padding="12,0,8,0" TextElement.FontSize="11.5" TextElement.Foreground="{StaticResource Faint}">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button x:Name="StatusFont" Style="{StaticResource StatusLink}" Click="StatusLook_Click" ToolTip="Terminal font"/>
+                            <Button x:Name="StatusTheme" Style="{StaticResource StatusLink}" Click="StatusLook_Click" ToolTip="Colour theme" Margin="6,0,0,0"/>
+                            <TextBlock x:Name="StatusUtf8" Text="UTF-8" VerticalAlignment="Center" Margin="12,0,4,0"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True" Margin="0,0,12,0">
+                            <Ellipse x:Name="StatusDot" Width="7" Height="7" StrokeThickness="2" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="StatusEnv" Margin="6,0,16,0" VerticalAlignment="Center"/>
+                            <StackPanel x:Name="StatusCwdPanel" Orientation="Horizontal" Margin="0,0,16,0">
+                                <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource IconFont}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="StatusCwd" FontFamily="{StaticResource MonoFont}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="360"/>
+                            </StackPanel>
+                            <StackPanel x:Name="StatusBranchPanel" Orientation="Horizontal" Margin="0,0,16,0">
+                                <Path Data="{StaticResource BranchIcon}" Stroke="{StaticResource Faint}" StrokeThickness="1.75" Stretch="Uniform" Width="11" Height="11"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="StatusBranch" FontFamily="{StaticResource MonoFont}" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel x:Name="StatusAgentPanel" Orientation="Horizontal">
+                                <TextBlock Text="&#xE99A;" FontFamily="{StaticResource IconFont}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="StatusAgent" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- One Grid per workspace lives here; only the selected one is visible. -->
+                <Grid x:Name="ContentHost" Background="{StaticResource TerminalBg}"/>
+            </DockPanel>
+
+            <!-- Pre-warmed terminal view waits here (collapsed) until a new pane adopts it. -->
+            <Grid x:Name="WarmHost" Grid.Column="2" Visibility="Collapsed"/>
+        </Grid>
+
+        <!-- ===== Inbox (a Popup is its own HWND, so it draws above the WebView2 panes) ===== -->
+        <Popup x:Name="NoticePopup" PlacementTarget="{Binding ElementName=BellButton}" Placement="Bottom" HorizontalOffset="-326" VerticalOffset="6"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+            <Border Margin="0,0,16,16" Background="{StaticResource Bg1}" BorderBrush="{StaticResource Line2}" BorderThickness="1" CornerRadius="14" Width="380" MaxHeight="620">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="30" ShadowDepth="8" Direction="270" Opacity="0.55" Color="Black"/>
+                </Border.Effect>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="14,10,8,10">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource SidebarButton}" Padding="0" Click="MarkAllRead_Click">
+                            <TextBlock Text="Mark all read" FontSize="12.5"/>
+                        </Button>
+                        <TextBlock Text="Inbox" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource FgStrong}" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Border x:Name="ToastWarning" DockPanel.Dock="Top" Background="{StaticResource AccentTint}" BorderBrush="#4DF5A524" BorderThickness="1" CornerRadius="9"
+                            Margin="12,0,12,10" Padding="11,9" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="ToastWarningText" FontSize="12" Foreground="{StaticResource FgStrong}" TextWrapping="Wrap"
+                                       Text="Windows notifications are turned off, so Bellboard can't show toasts. Rings, badges and this list still work."/>
+                            <Button Content="Open Windows notification settings" HorizontalAlignment="Left" Margin="0,8,0,0" Style="{StaticResource PrimaryButton}"
+                                    MinHeight="26" Padding="10,4" FontSize="12" Click="OpenNotificationSettings_Click"/>
+                        </StackPanel>
+                    </Border>
+                    <!-- Agents: every agent pane with its state, how long, and what it last said. -->
+                    <StackPanel x:Name="AgentsSection" DockPanel.Dock="Top" Visibility="Collapsed">
+                        <TextBlock Text="AGENTS" Style="{StaticResource GroupLabel}" Margin="14,2,0,6"/>
+                        <ItemsControl x:Name="AgentList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="14,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="{StaticResource AccentTint}" VerticalAlignment="Top" Margin="0,0,11,0">
+                                                <Ellipse Width="8" Height="8" Fill="{Binding Dot}"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Title}" FontSize="12.5" FontWeight="Medium" Foreground="{StaticResource FgStrong}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding StatusText}" FontSize="11.5" Foreground="{Binding Dot}" Margin="0,1,0,0"/>
+                                                <TextBlock Text="{Binding Message}" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxHeight="34"
+                                                           TextTrimming="CharacterEllipsis" Margin="0,3,0,0" Visibility="{Binding HasMessage, Converter={StaticResource B2V}}"/>
+                                                <TextBlock Text="{Binding Where}" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Top" Margin="8,0,0,0">
+                                                <Button Content="Jump" Style="{StaticResource DialogButton}" MinHeight="26" Padding="10,3" FontSize="12" Click="AgentJump_Click"/>
+                                                <Button Content="Approve" Style="{StaticResource PrimaryButton}" MinHeight="26" Padding="10,3" FontSize="12" Margin="0,5,0,0" Click="AgentApprove_Click"
+                                                        ToolTip="Press Enter in the agent's pane (accepts the highlighted option)"
+                                                        Visibility="{Binding CanApprove, Converter={StaticResource B2V}}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="NOTIFICATIONS" Style="{StaticResource GroupLabel}" Margin="14,12,0,6"/>
+                    </StackPanel>
+                    <TextBlock x:Name="NoticeEmpty" DockPanel.Dock="Top" Text="You're all caught up." Margin="16,22,16,26"
+                               FontSize="12.5" Foreground="{StaticResource Faint}" TextAlignment="Center"/>
+                    <ListBox x:Name="NoticeList" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource NoticeItem}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" PreviewMouseLeftButtonUp="NoticeList_Click">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Width="5" Height="5" Fill="{StaticResource Accent}" Margin="-10,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="{Binding UnreadDot}"/>
+                                    <Border Width="30" Height="30" CornerRadius="8" Background="{Binding IconBackground}" VerticalAlignment="Top" Margin="0,0,11,0">
+                                        <TextBlock Text="{Binding IconGlyph}" FontFamily="{StaticResource IconFont}" FontSize="13" Foreground="{Binding IconForeground}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding Title}" FontSize="12.5" FontWeight="Medium" Foreground="{StaticResource FgStrong}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Body}" FontSize="12" Foreground="{StaticResource Faint}" TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                        <TextBlock Text="{Binding Workspace.Name}" FontSize="11" Foreground="{StaticResource Faint}" Margin="0,3,0,0" Opacity="0.8"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding Ago}" FontSize="11" Foreground="{StaticResource Faint}" Margin="8,1,0,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</Window>

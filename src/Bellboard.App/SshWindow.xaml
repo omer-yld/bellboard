@@ -1,0 +1,31 @@
+<Window x:Class="Bellboard.SshWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False" ResizeMode="NoResize"
+        SizeToContent="Height" Width="520" FontFamily="{StaticResource UiFont}" WindowStartupLocation="CenterOwner">
+    <Border Margin="20" Background="{StaticResource Bg1}" BorderBrush="{StaticResource Line2}" BorderThickness="1" CornerRadius="16" Padding="24,20">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="40" ShadowDepth="10" Direction="270" Opacity="0.6" Color="Black"/>
+        </Border.Effect>
+        <StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE774;" FontFamily="{StaticResource IconFont}" FontSize="18" Foreground="{StaticResource Accent}" VerticalAlignment="Center"/>
+                <TextBlock Text="Connect over SSH" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource FgStrong}" Margin="10,0,0,0"/>
+            </StackPanel>
+            <TextBlock x:Name="IntroText" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,6,0,14" TextWrapping="Wrap"
+                       Text="Opens Windows' OpenSSH client in a new terminal. Your keys, ssh-agent and ~/.ssh/config work as usual."/>
+
+            <TextBlock Text="HOST" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource Faint}" Margin="0,0,0,5"/>
+            <TextBox x:Name="HostBox" Style="{StaticResource FieldBox}" FontFamily="{StaticResource MonoFont}"
+                     Tag="user@host, a name from ~/.ssh/config, or user@host -p 2222"/>
+
+            <TextBlock x:Name="ErrorText" Foreground="{StaticResource Red}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+
+            <DockPanel Margin="0,18,0,0" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="Enter to connect · Esc to cancel" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="Connect" Click="Connect_Click" Margin="8,0,0,0"/>
+                <Button DockPanel.Dock="Right" Style="{StaticResource DialogButton}" Content="Cancel" Click="Cancel_Click"/>
+            </DockPanel>
+        </StackPanel>
+    </Border>
+</Window>

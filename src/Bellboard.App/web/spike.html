@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>renderer spike</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #15171c; overflow: hidden; }
+    #grid { display: grid; height: 100%; gap: 4px; }
+    #grid > div { position: relative; overflow: hidden; }
+    #status { position: fixed; bottom: 4px; right: 8px; color: #8fb6ff; font: 12px sans-serif; z-index: 9; }
+  </style>
+</head>
+<body>
+  <!-- Spike (roadmap 3.2): N terminals in ONE WebView2 page, to compare memory with one view per pane. -->
+  <div id="grid"></div>
+  <div id="status"></div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/addon-webgl.js"></script>
+  <script>
+    const n = Number(new URLSearchParams(location.search).get('n') || 6);
+    const grid = document.getElementById('grid');
+    grid.style.gridTemplateColumns = `repeat(${Math.ceil(Math.sqrt(n))}, 1fr)`;
+    let webgl = 0, lost = 0;
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('div');
+      grid.appendChild(el);
+      const term = new Terminal({ fontFamily: "'Cascadia Mono', Consolas, monospace", fontSize: 14, scrollback: 10000, theme: { background: '#15171c' } });
+      const fit = new FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.open(el);
+      try {
+        const g = new WebglAddon.WebglAddon();
+        g.onContextLoss(() => { lost++; g.dispose(); });
+        term.loadAddon(g);
+        webgl++;
+      } catch (e) { }
+      fit.fit();
+      let text = '';
+      for (let l = 0; l < 2000; l++) text += `\x1b[3${l % 7 + 1}mterminal ${i} line ${l}\x1b[0m the quick brown fox jumps over the lazy dog\r\n`;
+      term.write(text);
+    }
+    setTimeout(() => {
+      document.getElementById('status').textContent = `${n} terminals · WebGL ${webgl} · contexts lost ${lost}`;
+      document.title = `spike n=${n} webgl=${webgl} lost=${lost}`;
+    }, 1500);
+  </script>
+</body>
+</html>

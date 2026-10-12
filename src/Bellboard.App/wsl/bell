@@ -1,0 +1,3 @@
+#!/bin/sh
+# Lets WSL shells run Bellboard's Windows CLI as `bell`. Bellboard puts this folder on PATH in its panes.
+exec "$(dirname "$0")/../bell.exe" "$@"

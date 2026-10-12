@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>New Tab</title>
+  <meta name="color-scheme" content="dark">
+  <style>
+    :root {
+      --bg: #15171c;
+      --panel: #1b1e25;
+      --panel-hover: #222630;
+      --line: #2a2f39;
+      --fg: #d7dae0;
+      --strong: #eef0f4;
+      --muted: #8a909b;
+      --faint: #5a606b;
+      --accent: #4c8dff;
+      --ok: #3fb950;
+      --mono: 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background:
+        radial-gradient(900px 420px at 50% -120px, rgba(76, 141, 255, 0.10), transparent 70%),
+        var(--bg);
+      color: var(--fg);
+      font: 14px/1.45 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+      padding: clamp(28px, 12vh, 120px) 20px 40px;
+    }
+    main { width: min(620px, 100%); margin: 0 auto; }
+
+    .brand { display: flex; align-items: center; gap: 10px; justify-content: center; margin-bottom: 22px; color: var(--muted); }
+    .brand svg { width: 28px; height: 28px; }
+    .brand b { color: var(--strong); font-weight: 600; font-size: 15px; letter-spacing: 0.2px; }
+    .brand span { font-size: 12.5px; }
+
+    form { position: relative; }
+    .search {
+      width: 100%; height: 50px; padding: 0 92px 0 46px;
+      background: var(--panel); color: var(--strong);
+      border: 1px solid var(--line); border-radius: 14px;
+      font: inherit; font-size: 15.5px; outline: none;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .search::placeholder { color: var(--faint); }
+    .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.18), 0 8px 30px rgba(0, 0, 0, 0.25); }
+    .search-icon { position: absolute; left: 16px; top: 50%; translate: 0 -50%; width: 18px; height: 18px; color: var(--muted); pointer-events: none; }
+    .enter { position: absolute; right: 12px; top: 50%; translate: 0 -50%; }
+
+    kbd {
+      font: 11.5px var(--mono); color: var(--muted);
+      background: #14161b; border: 1px solid var(--line); border-bottom-width: 2px;
+      border-radius: 6px; padding: 1px 6px;
+    }
+
+    section { margin-top: 34px; }
+    h2 { font-size: 11.5px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; color: var(--faint); margin: 0 0 10px 2px; }
+
+    .ports { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .port {
+      display: flex; flex-direction: column; gap: 2px; text-decoration: none;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+      transition: background .15s, border-color .15s, translate .15s;
+    }
+    .port:hover, .port:focus-visible { background: var(--panel-hover); border-color: #39404d; translate: 0 -1px; outline: none; }
+    .port .num { font: 600 18px var(--mono); color: var(--strong); display: flex; align-items: center; gap: 8px; }
+    .port .num::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.15); }
+    .port .host { font: 12px var(--mono); color: var(--muted); }
+    .empty {
+      border: 1px dashed var(--line); border-radius: 12px; padding: 14px 16px;
+      color: var(--muted); font-size: 13px;
+    }
+    .empty code, .tips code { font: 12px var(--mono); color: var(--fg); background: #14161b; border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+
+    .recent { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+    .recent li + li { border-top: 1px solid var(--line); }
+    .recent a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; text-decoration: none; color: inherit; }
+    .recent a:hover, .recent a:focus-visible { background: var(--panel-hover); outline: none; }
+    .avatar { flex: none; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-weight: 600; font-size: 12.5px; color: #0f1115; }
+    .meta { min-width: 0; }
+    .title { color: var(--strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .url { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .tips { margin-top: 36px; display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; color: var(--faint); font-size: 12.5px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="bb-tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#252A35"/><stop offset="1" stop-color="#15181E"/></linearGradient>
+          <linearGradient id="bb-brass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FAC45A"/><stop offset="1" stop-color="#EE971C"/></linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="12" fill="url(#bb-tile)"/>
+        <path d="M16 45C19 42 19.5 38 19.5 31C19.5 21.5 25 15.5 32 15.5C39 15.5 44.5 21.5 44.5 31C44.5 38 45 42 48 45ZM15.25 44H48.75A2.25 2.25 0 0 1 48.75 48.5H15.25A2.25 2.25 0 0 1 15.25 44ZM32 9.8A2.8 2.8 0 1 1 32 15.4A2.8 2.8 0 1 1 32 9.8Z" fill="url(#bb-brass)"/>
+        <path d="M25 25L30.6 30.2L25 35.4M34 35.4H39.4" fill="none" stroke="#1A1E26" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="32" cy="54" r="4.6" fill="#4C8DFF"/>
+      </svg>
+      <b>Bellboard</b><span id="ws"></span>
+    </div>
+
+    <form id="go" autocomplete="off">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+      </svg>
+      <input id="q" class="search" type="text" placeholder="Search or type a URL" autofocus spellcheck="false" aria-label="Search or type a URL">
+      <kbd class="enter">Enter</kbd>
+    </form>
+
+    <section>
+      <h2>Running in this workspace</h2>
+      <div id="ports" class="ports" hidden></div>
+      <div id="no-ports" class="empty">No dev servers detected yet. Start one in a terminal (for example <code>npm run dev</code>) and its port appears here.</div>
+    </section>
+
+    <section id="recent-section" hidden>
+      <h2>Recent</h2>
+      <ul id="recent" class="recent"></ul>
+    </section>
+
+    <div class="tips">
+      <span><kbd>Ctrl</kbd> <kbd>L</kbd> address bar</span>
+      <span>Agents drive this pane: <code>bell browser snapshot</code> <code>click</code> <code>type</code> <code>eval</code></span>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+      const host = window.chrome && window.chrome.webview;
+      let searchUrl = 'https://www.google.com/search?q=%s';
+      const $ = (id) => document.getElementById(id);
+
+      function toUrl(input) {
+        const s = input.trim();
+        if (!s) return null;
+        if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || s.startsWith('about:')) return s;
+        if (/^:\d+/.test(s)) return 'http://localhost' + s;
+        if (/^(localhost|127\.|\[::1\]|\d+\.\d+\.\d+\.\d+)/i.test(s)) return 'http://' + s;
+        if (!/\s/.test(s) && /\.[a-z]{2,}(?::\d+)?(\/|$)/i.test(s)) return 'https://' + s;
+        return searchUrl.includes('%s') ? searchUrl.replace('%s', encodeURIComponent(s)) : searchUrl + encodeURIComponent(s);
+      }
+
+      $('go').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const url = toUrl($('q').value);
+        if (url) location.href = url;
+      });
+
+      const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+
+      function render(d) {
+        if (d.search) searchUrl = d.search;
+        $('ws').textContent = d.workspace ? '· ' + d.workspace : '';
+
+        const ports = d.ports || [];
+        $('ports').replaceChildren(...ports.map((p) => {
+          const a = document.createElement('a');
+          a.className = 'port';
+          a.href = p.url;
+          a.innerHTML = '<span class="num"></span><span class="host"></span>';
+          a.querySelector('.num').textContent = ':' + p.port;
+          a.querySelector('.host').textContent = 'localhost:' + p.port;
+          return a;
+        }));
+        $('ports').hidden = ports.length === 0;
+        $('no-ports').hidden = ports.length > 0;
+
+        const recent = d.recent || [];
+        $('recent').replaceChildren(...recent.map((r) => {
+          let hostName = r.url;
+          try { hostName = new URL(r.url).host; } catch (_) { }
+          const li = document.createElement('li');
+          li.innerHTML = '<a><span class="avatar"></span><span class="meta"><div class="title"></div><div class="url"></div></span></a>';
+          const a = li.querySelector('a');
+          a.href = r.url;
+          const av = li.querySelector('.avatar');
+          av.textContent = (hostName.replace(/^www\./, '')[0] || '?').toUpperCase();
+          av.style.background = `hsl(${hue(hostName)} 55% 68%)`;
+          li.querySelector('.title').textContent = r.title || hostName;
+          li.querySelector('.url').textContent = r.url.replace(/^https?:\/\//, '');
+          return li;
+        }));
+        $('recent-section').hidden = recent.length === 0;
+      }
+
+      if (host) {
+        host.addEventListener('message', (e) => { if (e.data && e.data.t === 'start') render(e.data); });
+        host.postMessage({ t: 'start-ready' });
+      }
+      $('q').focus();
+    })();
+  </script>
+</body>
+</html>

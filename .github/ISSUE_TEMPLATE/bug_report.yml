@@ -1,0 +1,34 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bellboard version
+      description: The output of `bell --version`.
+      placeholder: Bellboard 0.4.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: input
+    id: shell
+    attributes:
+      label: Shell and agent
+      description: Which shell (PowerShell, WSL, Git Bash, SSH…) and agent (Claude Code, Codex…), if it matters.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Diagnostics
+      description: Attach the zip from `bell doctor --zip` (look it over first; it can name your folders), or paste `bell doctor`.

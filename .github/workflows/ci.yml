@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Unit tests
+        run: dotnet test tests/Bellboard.Tests/Bellboard.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Ensure WebView2 runtime
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          if (-not (Test-Path $key)) {
+            Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "$env:RUNNER_TEMP\wv2.exe"
+            Start-Process "$env:RUNNER_TEMP\wv2.exe" -ArgumentList "/silent /install" -Wait
+          }
+
+      # Hosted runners have an interactive desktop, but GPU/WebView2 behaviour there is not guaranteed;
+      # keep the smoke test informative until it has a track record.
+      - name: Smoke test
+        continue-on-error: true
+        shell: pwsh
+        run: ./tests/smoke.ps1 -BuildDir dist/Bellboard -PromptBudgetMs 10000
+
+      - name: Package (self-contained zip, SHA-256, update feed, winget manifests)
+        shell: pwsh
+        run: ./build.ps1 -Package -Output dist/package/Bellboard
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bellboard-win-x64
+          path: |
+            dist/package/*.zip
+            dist/package/*.sha256
+            dist/package/latest.json
+            dist/package/winget

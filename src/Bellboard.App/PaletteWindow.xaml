@@ -1,0 +1,89 @@
+<Window x:Class="Bellboard.PaletteWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" ResizeMode="NoResize" SizeToContent="Height" Width="640"
+        FontFamily="{StaticResource UiFont}" UseLayoutRounding="True">
+    <Border Margin="20" Background="{StaticResource Bg1}" BorderBrush="{StaticResource Line2}" BorderThickness="1" CornerRadius="16">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="40" ShadowDepth="10" Direction="270" Opacity="0.6" Color="Black"/>
+        </Border.Effect>
+        <DockPanel>
+            <!-- Search -->
+            <Border DockPanel.Dock="Top" Height="52" BorderBrush="{StaticResource Divider}" BorderThickness="0,0,0,1" Padding="16,0,14,0">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="15" Foreground="{StaticResource Faint}"
+                               VerticalAlignment="Center" Margin="0,0,11,0"/>
+                    <Border DockPanel.Dock="Right" Style="{StaticResource Kbd}"><TextBlock Text="Esc" Style="{StaticResource KbdText}"/></Border>
+                    <Grid>
+                        <TextBox x:Name="Query" Background="Transparent" BorderThickness="0" Foreground="{StaticResource FgStrong}"
+                                 CaretBrush="{StaticResource FgStrong}" SelectionBrush="{StaticResource Accent}" FontSize="15" VerticalContentAlignment="Center"
+                                 TextChanged="Query_TextChanged" PreviewKeyDown="Query_PreviewKeyDown"/>
+                        <TextBlock x:Name="Placeholder" Margin="2,0,0,0" IsHitTestVisible="False" FontSize="15" Foreground="{StaticResource Faint}" VerticalAlignment="Center"
+                                   Text="Run a command, jump to a workspace, open a folder…"/>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="14,8" TextElement.FontSize="11" TextElement.Foreground="{StaticResource Faint}">
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource Kbd}" Margin="0"><TextBlock Text="↑" Style="{StaticResource KbdText}"/></Border>
+                    <Border Style="{StaticResource Kbd}"><TextBlock Text="↓" Style="{StaticResource KbdText}"/></Border>
+                    <TextBlock Text="move" Margin="6,0,16,0" VerticalAlignment="Center"/>
+                    <Border Style="{StaticResource Kbd}" Margin="0"><TextBlock Text="↵" Style="{StaticResource KbdText}"/></Border>
+                    <TextBlock Text="run" Margin="6,0,16,0" VerticalAlignment="Center"/>
+                    <Border Style="{StaticResource Kbd}" Margin="0"><TextBlock Text="&gt;" Style="{StaticResource KbdText}"/></Border>
+                    <TextBlock Text="commands only" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <ListBox x:Name="Results" MaxHeight="420" Background="Transparent" BorderThickness="0" Padding="6"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ItemContainerStyle="{StaticResource PaletteRow}"
+                     VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                     PreviewMouseLeftButtonUp="Results_Click">
+                <ListBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource GroupLabel}" Margin="10,10,0,5"/>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ListBox.GroupStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="27"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="Glyph" Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="14" VerticalAlignment="Center"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"/>
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="13"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                                <Run Text="{Binding Title, Mode=OneWay}"/><Run Text="   "/><Run Text="{Binding Subtitle, Mode=OneWay}" FontSize="12" Foreground="{StaticResource Faint}"/>
+                            </TextBlock>
+                            <ItemsControl Grid.Column="2" ItemsSource="{Binding Keys}" VerticalAlignment="Center" Margin="12,0,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource Kbd}"><TextBlock Text="{Binding}" Style="{StaticResource KbdText}"/></Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource Accent}"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+    </Border>
+</Window>
