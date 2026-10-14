@@ -223,6 +223,41 @@ public class PermissionRequestTests
     }
 }
 
+public class TailscaleTests
+{
+    // What `tailscale serve status --json` printed on a machine that already published two apps.
+    private const string TwoApps = """
+        {"TCP":{"443":{"HTTPS":true},"8443":{"HTTPS":true}},
+         "Web":{"pc.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}},
+                "pc.tail1234.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8767"}}}}}
+        """;
+
+    [Fact]
+    public void ReadsWhatIsAlreadyServed()
+    {
+        var map = Tailscale.ParseServe(TwoApps);
+        Assert.Equal("http://127.0.0.1:8765", map[443]);
+        Assert.Equal("http://127.0.0.1:8767", map[8443]);
+        Assert.False(map.ContainsKey(17821));
+    }
+
+    [Fact]
+    public void TcpForwardsAndPathsCount()
+    {
+        var map = Tailscale.ParseServe("""{"TCP":{"22":{"TCPForward":"127.0.0.1:22"},"9000":{"HTTPS":true}},"Web":{"pc.ts.net:9000":{"Handlers":{"/api":{"Proxy":"http://127.0.0.1:5000"}}}}}""");
+        Assert.Equal("tcp://127.0.0.1:22", map[22]);
+        Assert.Equal("(paths: /api)", map[9000]);
+        Assert.Empty(Tailscale.ParseServe("{}"));
+    }
+
+    [Fact]
+    public void BellboardGetsItsOwnPortNot443()
+    {
+        Assert.Equal("https://pc.tail1234.ts.net:17821", Tailscale.UrlFor("pc.tail1234.ts.net", 17821));
+        Assert.Equal("tailscale serve --bg --https=17821 http://127.0.0.1:17821", Tailscale.ServeCommand(17821));
+    }
+}
+
 public class PipeConnectionTests
 {
     [Fact]

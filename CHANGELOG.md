@@ -8,6 +8,7 @@
   notifications, and new / finish agent with full access. Off by default; published privately with
   `bell remote tailscale` (or your own tunnel, or the LAN); devices pair with a QR code and get a level (view,
   respond, full). Settings › Remote, `bell remote …`, and a status bar item while a phone is connected.
+  Tailscale publishing uses Bellboard's own port (`:17821`) and never replaces what you already serve.
 - `bell events` follows notifications, permission requests and state as JSON lines; `bell attach <pane>`
   mirrors a pane read-only in another terminal.
 - The inbox's **Approve** answers a pending permission request directly, or chooses "Yes" on the agent's menu,

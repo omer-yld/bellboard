@@ -182,20 +182,21 @@ public sealed class RemoteCommands
                 if (!st.Running || st.Url == null) throw new InvalidOperationException((st.Error ?? "Tailscale isn't connected") + ". Sign in to Tailscale, then run this again.");
                 if (p["off"] is JsonValue off && off.TryGetValue<bool>(out var isOff) && isOff)
                 {
-                    var stopErr = await Tailscale.StopServingAsync();
+                    var stopErr = await Tailscale.StopServingAsync(cfg.Port);
                     if (stopErr != null) throw new InvalidOperationException(stopErr);
                     return new JsonObject { ["served"] = false };
                 }
                 var err = await Tailscale.ServeAsync(cfg.Port);
                 if (err != null)
                     throw new InvalidOperationException($"tailscale serve failed: {err}\nIf HTTPS certificates are off for your tailnet, turn them on at https://login.tailscale.com/admin/dns and try again.");
+                var url = Tailscale.UrlFor(st.DnsName!, cfg.Port);
                 var updated = _mux.Config.Clone();
                 updated.Remote.Enabled = true;
                 updated.Remote.Mode = "tailscale";
-                updated.Remote.Url = st.Url;
+                updated.Remote.Url = url;
                 updated.Save();
                 _mux.ApplyConfig(updated);
-                return new JsonObject { ["served"] = true, ["url"] = st.Url };
+                return new JsonObject { ["served"] = true, ["url"] = url };
             }
         }
         throw new InvalidOperationException($"unknown method '{method}'");
