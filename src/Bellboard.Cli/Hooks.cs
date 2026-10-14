@@ -22,7 +22,14 @@ internal static class Hooks
 {
     private const string CodexMarker = "\"hook\", \"codex\"";
     private static readonly string[] ClaudeEvents =
-        ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd", "SubagentStart", "SubagentStop", "TeammateIdle", "TaskCompleted"];
+        ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd", "SubagentStart", "SubagentStop", "TeammateIdle", "TaskCompleted",
+         "PermissionRequest"];
+
+    /// <summary>
+    /// How long Claude Code lets a PermissionRequest hook wait for an answer from the phone (seconds). Bellboard
+    /// answers at once ("no decision": Claude's own dialog) unless remote access routes the question to a phone.
+    /// </summary>
+    internal const int PermissionTimeout = 3600;
 
     public static int RunHook(string[] args)
     {
@@ -46,6 +53,7 @@ internal static class Hooks
             }
             var pane = BellboardProtocol.Env(BellboardProtocol.EnvPane);
             if (string.IsNullOrEmpty(pane)) return 0;
+            if (agent == "claude" && ev == "PermissionRequest") return Permission(pane, payload);
             using var client = PipeClient.TryConnect(BellboardProtocol.ResolvePipeName(), 1000);
             client?.Call("agent.hook", new JsonObject { ["pane"] = pane, ["agent"] = agent, ["event"] = ev, ["payload"] = payload }, 5000);
         }
@@ -56,17 +64,47 @@ internal static class Hooks
         return 0;
     }
 
+    /// <summary>
+    /// Claude Code is about to ask for permission. While you're away (and a phone is paired), Bellboard holds the
+    /// question for the phone and this prints its allow/deny decision; otherwise it prints nothing and Claude
+    /// shows its own dialog.
+    /// </summary>
+    private static int Permission(string pane, JsonNode? payload)
+    {
+        using var client = PipeClient.TryConnect(BellboardProtocol.ResolvePipeName(), 1000);
+        if (client == null) return 0;
+        var wait = PermissionTimeout - 60;
+        var r = client.Call("agent.permission", new JsonObject { ["pane"] = pane, ["payload"] = payload, ["wait"] = wait }, (wait + 30) * 1000);
+        if (r?["decision"] is JsonObject decision)
+            Console.WriteLine(PermissionOutput(decision).ToJsonString());
+        return 0;
+    }
+
+    internal static JsonObject PermissionOutput(JsonObject decision) => new()
+    {
+        ["hookSpecificOutput"] = new JsonObject
+        {
+            ["hookEventName"] = "PermissionRequest",
+            ["decision"] = decision.DeepClone(),
+        },
+    };
+
     private static string? ReadStdin(int timeoutMs)
     {
         if (!Console.IsInputRedirected) return null;
-        var t = Task.Run(() => Console.In.ReadToEnd());
+        // Agents write UTF-8; Console.In would decode it with the console's OEM code page and garble non-ASCII text.
+        var t = Task.Run(() =>
+        {
+            using var reader = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true);
+            return reader.ReadToEnd();
+        });
         return t.Wait(timeoutMs) ? t.Result : null;
     }
 
     private static JsonNode? TryParse(string? s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
-        try { return JsonNode.Parse(s); } catch { return null; }
+        try { return JsonNode.Parse(s.TrimStart('\uFEFF')); } catch { return null; }
     }
 
     public static int Manage(string action, bool wsl = false)
@@ -458,7 +496,7 @@ internal static class Hooks
                 {
                     ["type"] = "command",
                     ["command"] = command,
-                    ["timeout"] = 10,
+                    ["timeout"] = ev == "PermissionRequest" ? PermissionTimeout : 10,
                 }),
             });
             added++;

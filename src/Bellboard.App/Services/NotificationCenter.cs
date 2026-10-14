@@ -170,6 +170,13 @@ public sealed class NotificationCenter : IDisposable
         Log.Info($"notify [{source}] {pane.Id}: {title} — {body}");
 
         bool quiet = DoNotDisturb || pane.Workspace.Muted;
+        if (_mux.Events is { } events && events.HasSubscribers("notice"))
+        {
+            var json = Bellboard.Ipc.StateJson.Notice(n);
+            json["quiet"] = quiet;
+            json["agent"] = source is "claude" or "codex" or "pi" or "opencode" ? AgentManager.DisplayName(source) : null;
+            events.Publish("notice", "notice", json);
+        }
         if (!window.IsActive && !quiet) Win32.FlashTaskbar(window.Handle);
         if (_mux.Config.DesktopNotifications && !quiet && (!window.IsActive || _mux.Selected != pane.Workspace))
             ShowToast(n);

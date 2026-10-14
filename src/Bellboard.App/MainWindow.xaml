@@ -368,6 +368,13 @@
                         BorderThickness="0,1,0,0" Padding="12,0,8,0" TextElement.FontSize="11.5" TextElement.Foreground="{StaticResource Faint}">
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <!-- Bellboard Remote: shown while remote access is on; lights up when a phone is connected. -->
+                            <Button x:Name="StatusRemote" Style="{StaticResource StatusLink}" Click="StatusRemote_Click" Visibility="Collapsed" Margin="0,0,6,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="StatusRemoteIcon" Text="&#xE8EA;" FontFamily="{StaticResource IconFont}" FontSize="12" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                    <TextBlock x:Name="StatusRemoteText" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
                             <Button x:Name="StatusFont" Style="{StaticResource StatusLink}" Click="StatusLook_Click" ToolTip="Terminal font"/>
                             <Button x:Name="StatusTheme" Style="{StaticResource StatusLink}" Click="StatusLook_Click" ToolTip="Colour theme" Margin="6,0,0,0"/>
                             <TextBlock x:Name="StatusUtf8" Text="UTF-8" VerticalAlignment="Center" Margin="12,0,4,0"/>
@@ -449,7 +456,7 @@
                                             <StackPanel Grid.Column="2" VerticalAlignment="Top" Margin="8,0,0,0">
                                                 <Button Content="Jump" Style="{StaticResource DialogButton}" MinHeight="26" Padding="10,3" FontSize="12" Click="AgentJump_Click"/>
                                                 <Button Content="Approve" Style="{StaticResource PrimaryButton}" MinHeight="26" Padding="10,3" FontSize="12" Margin="0,5,0,0" Click="AgentApprove_Click"
-                                                        ToolTip="Press Enter in the agent's pane (accepts the highlighted option)"
+                                                        ToolTip="Allow the agent's request (chooses &quot;Yes&quot;)"
                                                         Visibility="{Binding CanApprove, Converter={StaticResource B2V}}"/>
                                             </StackPanel>
                                         </Grid>

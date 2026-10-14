@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $exe = Join-Path $InstallDir "bell.exe"
 if (Test-Path $exe) { & $exe quit 2>$null | Out-Null; Start-Sleep -Seconds 2 }
-Get-Process Bellboard -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
+Get-Process Bellboard, bellboard-remote -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (($userPath -split ";") -contains $InstallDir) {
