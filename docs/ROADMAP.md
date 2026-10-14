@@ -13,9 +13,12 @@ What's next for Bellboard, roughly in order. Ideas and votes are welcome in
 
 ## Later
 
+- **Remote: conversation view.** Read a Claude Code session as a chat on the phone (from its transcript)
+  instead of a terminal.
+- **Remote: passkeys.** Confirm Full-level actions (merge, typing anywhere) with Face ID or a fingerprint.
+
 - **Remote agents.** Run agents on a remote machine over SSH and follow them in Bellboard as if they were
   local.
-- **Phone view.** Glance at who needs you, and answer simple prompts, from your phone.
 - **Arm64 builds.**
 
 ## Not planned

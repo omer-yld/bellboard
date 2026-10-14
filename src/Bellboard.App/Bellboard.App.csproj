@@ -25,6 +25,8 @@
     <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" />
     <!-- Toasts with buttons for unpackaged desktop apps. -->
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <!-- QR codes for pairing a phone with Bellboard Remote (MIT). -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
   <ItemGroup>

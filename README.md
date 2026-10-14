@@ -47,6 +47,7 @@ The builds aren't code-signed yet, so Windows SmartScreen may say *"Windows prot
 | **Splits and tabs** | Nested splits, tabs in any pane, zoom and equalize. Drag a tab or a pane's header onto another pane's edge to split it, onto its tabs to join them, or onto a workspace to move it there; shells keep running. Flip a split between side by side and top and bottom. Tabs shrink to fit, the rest wait behind a `+N` list, and pinned tabs never close by accident. |
 | **Shells** | PowerShell 7, Windows PowerShell, cmd, Git Bash, WSL distros (bash and zsh) and SSH hosts, with automatic folder and git-branch tracking. New tabs open in the shell you're in, including a `wsl` or `ssh` you started at a prompt. Your Windows Terminal font, theme and Nerd Font icons work. |
 | **Browser** | A real Chromium (WebView2) pane whose start page lists your dev servers. Agents can snapshot, click, type, evaluate, take screenshots and read the console and network logs. |
+| **Remote** | Your agents on your phone: an installable web app with the inbox, **Allow** / **Deny** for Claude Code's permission requests, quick replies, live terminals and push notifications. Off until you turn it on; reached privately through Tailscale. |
 | **For agents** | A CLI (`bell`), a named-pipe JSON API, and an MCP server (`bell mcp`, 24 tools) so an agent can open splits, read and type in terminals, report status and drive the browser. |
 | **Fast and native** | .NET 9 and WPF, ConPTY with a bundled OpenConsole, and a GPU (WebGL) xterm.js renderer. No Electron. A new workspace shows its prompt in about 35 ms; idle workspaces free their renderers while their shells keep running. |
 
@@ -92,7 +93,37 @@ bell feed write --pane $p "step 3/7: tests"
 bell feed status --pane $p done "all green"
 ```
 
-## Shells
+## Remote: your agents on your phone
+
+Step away from the desk and keep your agents moving. Bellboard Remote is a small web app that Bellboard serves
+itself, made for phones (add it to the Home Screen and it behaves like an app):
+
+- **Inbox:** who needs you and for how long, with what each agent asked.
+- **Allow / Deny:** Claude Code's permission requests go to the phone while you're away, with the command or
+  file they're about. Coming back to the desk hands the question back to the terminal; nothing is ever
+  allowed without someone tapping Allow.
+- **Answers:** numbered choices on an agent's screen become buttons; reply with text, Esc, Ctrl+C or arrows.
+- **Live terminals:** watch any pane as it runs (read-only until you tap **Type**). **Fit to phone** resizes
+  the shell for the phone while nobody is typing at the desk.
+- **Push notifications** when an agent needs you or finishes, if you turn them on.
+- With full access: start a new agent on a repo, or finish one (merge, PR, keep, discard).
+
+```powershell
+bell remote tailscale       # publish it on your tailnet: https://<pc>.<tailnet>.ts.net
+bell remote pair            # a QR code for your phone (the code works once, for 2 minutes)
+bell remote devices         # paired devices; bell remote level <id> view|respond|full; bell remote revoke <id>
+```
+
+Or use **Settings › Remote** (`Ctrl+,`). You need [Tailscale](https://tailscale.com/download) on the PC and the
+phone, signed in to the same account, with HTTPS certificates enabled for the tailnet. If you'd rather use your
+own tunnel (Cloudflare Tunnel, a reverse proxy), choose **My own tunnel**: Bellboard listens on `127.0.0.1` only.
+**Local network** mode serves HTTPS on your LAN with a self-signed certificate (no notifications on iPhone).
+
+Each device gets a level: **View** (look only), **Respond** (the default: answer agents and type into agent
+panes) or **Full** (also type into any pane, start and finish agents). The status bar shows when a phone is
+connected; every remote action is written to the workspace's log and `%LOCALAPPDATA%\Bellboard\remote.log`.
+Run `bell hooks install` again after updating so Claude Code sends its permission requests to Bellboard.
+
 
 New tabs, splits and workspaces open in the same shell and folder as the pane you're in. To pick another
 one, press `Ctrl+Shift+Space` (or the **⌄** next to a tab row's **+**): your installed shells, each WSL
@@ -148,7 +179,11 @@ JSON: `{"id":1,"method":"pane.split","params":{"direction":"right"}}`. The metho
 ## Privacy and safety
 
 - **No telemetry, no account.** Bellboard makes no network requests of its own. The browser pane loads
-  what you open; `bell update` checks GitHub's latest release only when you run it.
+  what you open; `bell update` checks GitHub's latest release only when you run it. With Remote push
+  notifications on, Bellboard sends encrypted notifications to the push service your phone's browser chose
+  (Google or Apple); their content is end-to-end encrypted, and leaves out the agent's text unless you allow it.
+- **Remote is off until you turn it on.** Then only devices you pair can connect, each with its own revocable
+  key and level. See [SECURITY.md](SECURITY.md).
 - **Only you can drive it.** The pipe and the CLI accept your Windows user only. Anything running as
   you can type into your terminals, as with any terminal you can script.
 - **Agents run with your rights.** Bellboard organizes agents; it doesn't sandbox them.
@@ -181,6 +216,10 @@ Use **Settings** (`Ctrl+,`) or edit `%APPDATA%\Bellboard\config.json`; changes a
 | `restoreSession`, `restoreAgents` | `true` | Restore layout and scrollback; resume Claude Code, Codex, OpenCode and Pi sessions |
 | `unloadIdleWorkspacesMinutes` | 30 | Free the renderers of workspaces hidden this long (0 = never) |
 | `updateFeed` | none | A `latest.json` URL to get an in-app notice when an update is out |
+| `remote.enabled`, `remote.mode` | `false`, `tailscale` | Bellboard Remote: `tailscale`, `local` (your own tunnel) or `lan` |
+| `remote.port`, `remote.url` | 17821, none | Where the sidecar listens (127.0.0.1 except in `lan` mode), and the address phones open |
+| `remote.answerPrompts`, `remote.awayMinutes` | `away`, 5 | Permission requests go to the phone: `away`, `always` or `off` |
+| `remote.push`, `remote.pushText` | `true`, `false` | Push notifications, and whether they include the agent's text |
 
 Logs, the session and browser data live in `%LOCALAPPDATA%\Bellboard\`. `Bellboard.exe --fresh` starts
 without restoring. To run a test instance beside your real one, set `BELLBOARD_PIPE` and

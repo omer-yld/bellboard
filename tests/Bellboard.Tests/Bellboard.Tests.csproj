@@ -16,7 +16,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Bellboard.App\Bellboard.App.csproj" />
-    <ProjectReference Include="..\..\src\Bellboard.Cli\Bellboard.Cli.csproj" />
+    <!-- An alias: the CLI compiles the same shared sources (src/Shared) as the app. -->
+    <ProjectReference Include="..\..\src\Bellboard.Cli\Bellboard.Cli.csproj" Aliases="cli" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Bellboard.Remote\Push\WebPush.cs" Link="Remote\WebPush.cs" />
   </ItemGroup>
 
 </Project>

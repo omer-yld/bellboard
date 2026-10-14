@@ -1,9 +1,11 @@
+extern alias cli;
+
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Bellboard.Cli;
+using cli::Bellboard.Cli;
 using Xunit;
 
 namespace Bellboard.Tests;
@@ -60,7 +62,7 @@ public sealed class HooksTests : IDisposable
             }
             """);
 
-        Assert.Equal(9, Hooks.InstallClaude(path, Exe));
+        Assert.Equal(10, Hooks.InstallClaude(path, Exe));
         Assert.Equal(0, Hooks.InstallClaude(path, Exe));
         Assert.True(Hooks.IsClaudeInstalled(path));
         Assert.True(File.Exists(path + ".bellboard-backup"));
@@ -70,7 +72,7 @@ public sealed class HooksTests : IDisposable
         Assert.Equal(new[] { "echo mine", $"{Exe} hook claude Stop" }, Commands(root, "Stop"));
         Assert.Equal(new[] { $"{Exe} hook claude Notification" }, Commands(root, "Notification"));
 
-        Assert.Equal(9, Hooks.UninstallClaude(path));
+        Assert.Equal(10, Hooks.UninstallClaude(path));
         var after = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         Assert.Equal(new[] { "echo mine" }, Commands(after, "Stop"));
         Assert.Null(after["hooks"]?["Notification"]);
@@ -90,7 +92,7 @@ public sealed class HooksTests : IDisposable
             } }
             """);
 
-        Assert.Equal(9, Hooks.InstallClaude(path, Exe, out var replaced));
+        Assert.Equal(10, Hooks.InstallClaude(path, Exe, out var replaced));
         Assert.Equal(2, replaced);
         var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         Assert.Equal(new[] { "echo mine", $"{Exe} hook claude Stop" }, Commands(root, "Stop"));
@@ -104,11 +106,11 @@ public sealed class HooksTests : IDisposable
     {
         var path = Path.Combine(_dir, "settings.json");
         const string wslExe = "'/mnt/c/Program Files/Bellboard/bell.exe'";
-        Assert.Equal(9, Hooks.InstallClaude(path, wslExe));
+        Assert.Equal(10, Hooks.InstallClaude(path, wslExe));
         Assert.Equal(0, Hooks.InstallClaude(path, wslExe));
         Assert.True(Hooks.IsClaudeInstalled(path));
-        Assert.Equal(9, Hooks.InstallClaude(path, "/mnt/d/bb/bell.exe", out var replaced));
-        Assert.Equal(9, replaced);
+        Assert.Equal(10, Hooks.InstallClaude(path, "/mnt/d/bb/bell.exe", out var replaced));
+        Assert.Equal(10, replaced);
     }
 
     [Fact]
@@ -155,7 +157,7 @@ public sealed class HooksTests : IDisposable
     public void ClaudeInstallCreatesMissingFile()
     {
         var path = Path.Combine(_dir, "new", "settings.json");
-        Assert.Equal(9, Hooks.InstallClaude(path, Exe));
+        Assert.Equal(10, Hooks.InstallClaude(path, Exe));
         Assert.True(Hooks.IsClaudeInstalled(path));
     }
 
