@@ -4,6 +4,9 @@ Status: **implemented** (branch `remote-access`), Phases 0–4 except the option
 **Phone view** and the groundwork for **Remote agents**. Wire protocol: `src/Bellboard.Remote/PROTOCOL.md`.
 
 ### What changed while building it
+- **Tailscale Serve on Bellboard's own port** (`https://<pc>.<tailnet>.ts.net:17821`), not 443: people already
+  serve their own apps on 443, and `tailscale serve --https=443` would have replaced them. Setup reads
+  `tailscale serve status` first and refuses a port something else uses; `off` removes only Bellboard's mapping.
 - **Default port 17821**, not a 47xxx port: WSL's mirrored networking reserves Linux's ephemeral range
   (32768–60999) on Windows, so ports there can fail to bind.
 - **Spike S1 wasn't needed to ship:** the "away" policy is safe whether or not Claude Code shows its dialog
