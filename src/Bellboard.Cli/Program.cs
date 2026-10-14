@@ -91,6 +91,14 @@ internal static class Program
           browser network [--last N] [--clear]
           browser screenshot -o out.png [--full]
 
+        remote (the phone view: inbox, answers, live terminals, push)
+          remote [status] · remote tailscale [off] · remote enable [--mode tailscale|local|lan] · remote disable
+          remote pair                         QR code + one-time code to pair a phone
+          remote devices · remote revoke <id> · remote level <id> view|respond|full
+          remote set [--answer-prompts away|always|off] [--push on|off] [--push-text on|off]
+          events [--topics notice,prompt,state]   follow what happens, one JSON line per event
+          attach [<pane>] [--lines N]         mirror a pane's output here (read-only) until Ctrl+C
+
         agents
           hooks install | uninstall | status  Claude Code hooks (+ Codex notify); add --wsl for agents in WSL
           mcp                                 MCP server on stdio (tools for panes, status, browser, agents)
@@ -154,12 +162,18 @@ internal static class Program
                 return Maintenance.Doctor(a);
             case "launch" or "start" or "open":
                 return Launch(a.Has("fresh") ? ["--fresh"] : Array.Empty<string>());
+            case "events":
+                return RemoteCli.Events(a);
+            case "attach":
+                return RemoteCli.Attach(a);
         }
 
         using var client = Connect();
         var p = a.Common();
         switch (cmd)
         {
+            case "remote":
+                return RemoteCli.Remote(client, a, p);
             case "ping":
             {
                 var r = client.Call("system.ping", p)!;
@@ -218,6 +232,10 @@ internal static class Program
                 return Print(client.Call("workspace.move", p), a, r => $"{r?["workspace"]} is now #{r?["index"]}");
             case "reopen":
                 return Print(client.Call("app.reopen", p), a, r => (string?)r?["result"]);
+            case "dev-settings":
+                p["section"] = a.Pos(0);
+                client.Call("dev.settings", p);
+                return 0;
             case "dev-menu":
                 p["which"] = a.Pos(0) ?? "workspace";
                 client.Call("dev.menu", p);

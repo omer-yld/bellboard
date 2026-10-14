@@ -55,8 +55,10 @@ public partial class MainWindow : Window
         };
         StateChanged += (_, _) => OnWindowStateChanged();
         Loaded += async (_, _) => await StartAsync();
+        Deactivated += (_, _) => Mux.Remote?.OnWindowActivity(false);
         Activated += (_, _) =>
         {
+            Mux.Remote?.OnWindowActivity(true);
             if (Mux.Selected?.FocusedPane is { Attention: true } p)
             {
                 p.Attention = false;
@@ -86,6 +88,9 @@ public partial class MainWindow : Window
             await WebEnv.Ready;
 
             WatchConfig();
+            Mux.Remote.StatusChanged += UpdateRemoteStatus;
+            Mux.Remote.Apply();
+            UpdateRemoteStatus();
             // Daily update check (only when an update feed is configured).
             var updates = new DispatcherTimer { Interval = TimeSpan.FromHours(24) };
             updates.Tick += async (_, _) => await CheckForUpdateAsync();
@@ -531,6 +536,35 @@ public partial class MainWindow : Window
     public void OpenFinishAgent(Workspace ws) => new FinishAgentWindow(this, Mux, ws).ShowDialog();
 
     public void OpenSettings(string? section = null) => new SettingsWindow(this, Mux, section).ShowDialog();
+
+    /// <summary>The status bar's remote item: hidden while remote access is off, amber while a phone is connected.</summary>
+    private void UpdateRemoteStatus()
+    {
+        var r = Mux.Remote;
+        var cfg = Mux.Config.Remote;
+        if (!cfg.Enabled)
+        {
+            StatusRemote.Visibility = Visibility.Collapsed;
+            return;
+        }
+        StatusRemote.Visibility = Visibility.Visible;
+        var names = r.Connected.Select(id => r.Devices.Find(id)?.Name ?? id).ToList();
+        StatusRemoteText.Text = r.Problem != null ? "Remote: problem" : names.Count switch
+        {
+            0 => "Remote",
+            1 => names[0],
+            _ => $"{names.Count} devices",
+        };
+        var lit = names.Count > 0 && r.Problem == null;
+        StatusRemoteIcon.Foreground = lit ? (Brush)FindResource("Accent") : r.Problem != null ? (Brush)FindResource("Red") : (Brush)FindResource("Faint");
+        StatusRemote.ToolTip = r.Problem != null
+            ? $"Bellboard Remote: {r.Problem}"
+            : names.Count > 0
+                ? $"Connected now: {string.Join(", ", names)}\n{r.Url}"
+                : $"Bellboard Remote is on · {r.Devices.Devices.Count} paired device(s)\n{r.Url}";
+    }
+
+    private void StatusRemote_Click(object sender, RoutedEventArgs e) => OpenSettings("remote");
 
     private string? _announcedUpdate;
 
@@ -1025,11 +1059,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AgentApprove_Click(object sender, RoutedEventArgs e)
+    private async void AgentApprove_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is AgentRow { Pane: Bellboard.Panes.TerminalPane t })
         {
-            try { t.SendText("\r"); } catch (Exception ex) { Log.Error("approve", ex); }
+            try
+            {
+                // A permission request waiting for the phone: answer it directly.
+                if (Mux.Prompts.For(t) is { } q) Mux.Prompts.Resolve(q.Id, "allow", null, "the desktop inbox");
+                // A menu on screen whose first option is "Yes": choose it, whatever is highlighted.
+                else if (PromptParser.Parse(await t.ReadAsync(30)) is { } menu
+                         && menu.Choices.FirstOrDefault() is { Key: "1" } yes && yes.Label.StartsWith("Yes", StringComparison.OrdinalIgnoreCase))
+                    t.SendText("1");
+                else t.SendText("\r");
+            }
+            catch (Exception ex) { Log.Error("approve", ex); }
             Mux.Notifications.MarkRead(t);
             RefreshAgents();
         }

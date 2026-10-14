@@ -231,6 +231,8 @@ public sealed class TerminalPane : PaneBase
                 }
                 var d = (string?)m["d"] ?? "";
                 var bin = m["bin"]?.GetValue<bool>() == true;
+                // Typing at the desk takes the terminal back from a phone that resized it.
+                if (_fit != null) EndFit();
                 if (bin) _pty?.WriteBinary(d); else _pty?.Write(d);
                 // Broadcast: the same keystrokes go to every other terminal in the workspace.
                 if (Workspace.Broadcast)
@@ -240,7 +242,15 @@ public sealed class TerminalPane : PaneBase
             case "r":
                 _cols = (int?)m["cols"] ?? _cols;
                 _rows = (int?)m["rows"] ?? _rows;
-                _pty?.Resize(_cols, _rows);
+                if (_fit == null)
+                {
+                    _pty?.Resize(_cols, _rows);
+                    MirrorResize();
+                }
+                break;
+            case "snap":
+                if ((int?)m["id"] is { } snapId && _snapshots.Remove(snapId, out var waiting))
+                    waiting.TrySetResult(((string?)m["data"] ?? "", (int?)m["cols"] ?? _cols, (int?)m["rows"] ?? _rows));
                 break;
             case "focus":
                 Mux.OnPaneFocused(this);
@@ -379,7 +389,8 @@ public sealed class TerminalPane : PaneBase
             // The page reloaded (e.g. renderer crash): keep the shell, just resync size.
             _cols = cols;
             _rows = rows;
-            _pty?.Resize(cols, rows);
+            if (_fit == null) _pty?.Resize(cols, rows);
+            MirrorResize();
             return;
         }
         _pageReady = true;
@@ -392,7 +403,8 @@ public sealed class TerminalPane : PaneBase
         {
             _cols = cols;
             _rows = rows;
-            _pty?.Resize(cols, rows);
+            if (_fit == null) _pty?.Resize(cols, rows);
+            MirrorResize();
         }
         Mux.TerminalPool.Warm();
         if (!_shellPoolPrimed)
@@ -548,7 +560,7 @@ public sealed class TerminalPane : PaneBase
             _outBuf.Clear();
             _flushScheduled = false;
         }
-        PostOutput(s);
+        Emit(s);
     }
 
     private void PostOutput(string s)
@@ -617,7 +629,7 @@ public sealed class TerminalPane : PaneBase
             Mux.ClosePane(this);
             return;
         }
-        PostOutput($"\r\n\x1b[0m\x1b[2m[process exited with code {code} — press any key to {(pinned ? "start a new shell" : "close")}]\x1b[0m\r\n");
+        Emit($"\r\n\x1b[0m\x1b[2m[process exited with code {code} — press any key to {(pinned ? "start a new shell" : "close")}]\x1b[0m\r\n");
     }
 
     private void Echo(string data, bool binary)
@@ -639,7 +651,7 @@ public sealed class TerminalPane : PaneBase
     public void WriteFeed(string text)
     {
         if (!Feed) throw new InvalidOperationException($"{Id} is a terminal, not a feed");
-        PostOutput(text.Replace("\r\n", "\n").Replace("\n", "\r\n"));
+        Emit(text.Replace("\r\n", "\n").Replace("\n", "\r\n"));
     }
 
     public async Task<string> ReadAsync(int lines)
@@ -698,8 +710,103 @@ public sealed class TerminalPane : PaneBase
     public override void Dispose()
     {
         if (Disposed) return;
+        Mux.Prompts.CancelFor(this);
+        foreach (var m in _mirrors.ToList()) m.Send("exit", new JsonObject());
+        _mirrors.Clear();
+        foreach (var w in _snapshots.Values) w.TrySetCanceled();
+        _snapshots.Clear();
         _pty?.Dispose();
         base.Dispose();
+    }
+
+    // ---- Remote mirroring (terminal.attach): a phone shows this terminal live ----
+
+    /// <summary>Numbers every chunk of output, so a mirror can join between a snapshot and the live stream.</summary>
+    private long _seq;
+    private readonly List<TerminalMirror> _mirrors = new();
+    private readonly Dictionary<int, TaskCompletionSource<(string Data, int Cols, int Rows)>> _snapshots = new();
+    private int _nextSnap;
+    /// <summary>"Phone fit": the shell is sized for a phone while nobody types at the desk.</summary>
+    private (int Cols, int Rows)? _fit;
+
+    public string SizeText => _fit is { } f ? $"{f.Cols}x{f.Rows}" : $"{_cols}x{_rows}";
+    public bool Fitted => _fit != null;
+    public int MirrorCount => _mirrors.Count;
+
+    /// <summary>Output as it happens: to xterm.js, and numbered to any mirrors.</summary>
+    private void Emit(string s)
+    {
+        if (s.Length == 0) return;
+        PostOutput(s);
+        _seq++;
+        if (_mirrors.Count == 0) return;
+        foreach (var m in _mirrors.ToList()) m.Output(_seq, s);
+    }
+
+    /// <summary>Starts mirroring: a snapshot of the screen and scrollback, then every chunk after it, in order.</summary>
+    public async Task AttachMirrorAsync(TerminalMirror mirror, int scrollback)
+    {
+        _mirrors.Add(mirror);
+        var (data, seq, cols, rows) = await SnapshotAsync(Math.Clamp(scrollback, 0, 20000));
+        if (!_mirrors.Contains(mirror)) return; // detached meanwhile
+        if (_fit is { } f) (cols, rows) = f;
+        mirror.Started(data, seq, cols, rows);
+    }
+
+    public void DetachMirror(TerminalMirror mirror)
+    {
+        _mirrors.Remove(mirror);
+        if (_mirrors.Count == 0 && _fit != null) EndFit();
+    }
+
+    private async Task<(string Data, long Seq, int Cols, int Rows)> SnapshotAsync(int scrollback)
+    {
+        if (_pageReady && !Unloaded && Web.CoreWebView2 != null)
+        {
+            // Asked on the same channel as the output, so the page answers after every chunk posted before it.
+            var id = ++_nextSnap;
+            var wait = new TaskCompletionSource<(string, int, int)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _snapshots[id] = wait;
+            var seq = _seq;
+            Post(new { t = "snap", id, rows = scrollback });
+            var done = await Task.WhenAny(wait.Task, Task.Delay(5000));
+            if (done == wait.Task && wait.Task.IsCompletedSuccessfully)
+            {
+                var (data, cols, rows) = wait.Task.Result;
+                return (data, seq, cols, rows);
+            }
+            _snapshots.Remove(id);
+            if (_pageReady && !Unloaded) return ("", _seq, _cols, _rows);
+        }
+        // No live renderer: what it will show when it comes back.
+        var text = (_reloadSnapshot ?? RestoreScrollback ?? "") + string.Concat(_preReady);
+        return (text, _seq, _cols, _rows);
+    }
+
+    private void MirrorResize()
+    {
+        if (_mirrors.Count == 0) return;
+        var (cols, rows) = _fit ?? (_cols, _rows);
+        foreach (var m in _mirrors.ToList()) m.Send("resize", new JsonObject { ["cols"] = cols, ["rows"] = rows });
+    }
+
+    /// <summary>Phone fit: size the shell for a phone. Ends when someone types at the desk or the phone leaves.</summary>
+    public void Fit(int cols, int rows)
+    {
+        if (Feed) throw new InvalidOperationException($"{Id} is a feed");
+        _fit = (Math.Clamp(cols, 20, 500), Math.Clamp(rows, 5, 300));
+        _pty?.Resize(_fit.Value.Cols, _fit.Value.Rows);
+        MirrorResize();
+        Log.Info($"pane {Id}: sized {_fit.Value.Cols}x{_fit.Value.Rows} for a phone");
+    }
+
+    public void EndFit()
+    {
+        if (_fit == null) return;
+        _fit = null;
+        _pty?.Resize(_cols, _rows);
+        MirrorResize();
+        Log.Info($"pane {Id}: back to the desktop size {_cols}x{_rows}");
     }
 
     /// <summary>The SSH host this pane connects to, when it was opened as an SSH shell.</summary>
@@ -731,4 +838,38 @@ public sealed class TerminalPane : PaneBase
 
     /// <summary>Close the shell and wait for it (used at exit so no shell outlives Bellboard).</summary>
     public Task CloseShellAsync() => _pty?.CloseAsync() ?? Task.CompletedTask;
+}
+
+/// <summary>
+/// One viewer of a terminal (a phone, `bell attach`). Output that arrives before its snapshot is held, then
+/// only chunks newer than the snapshot are sent, so nothing is missed or shown twice.
+/// </summary>
+public sealed class TerminalMirror
+{
+    private readonly Action<string, JsonNode?> _send;
+    private List<(long Seq, string Text)>? _early = new();
+    private long _since;
+
+    public TerminalMirror(Action<string, JsonNode?> send) => _send = send;
+
+    public void Send(string ev, JsonNode? data) => _send(ev, data);
+
+    internal void Output(long seq, string text)
+    {
+        if (_early != null)
+        {
+            _early.Add((seq, text));
+            return;
+        }
+        if (seq > _since) _send("output", new JsonObject { ["seq"] = seq, ["d"] = text });
+    }
+
+    internal void Started(string data, long seq, int cols, int rows)
+    {
+        _since = seq;
+        _send("snapshot", new JsonObject { ["data"] = data, ["seq"] = seq, ["cols"] = cols, ["rows"] = rows });
+        var early = _early!;
+        _early = null;
+        foreach (var (s, t) in early) Output(s, t);
+    }
 }

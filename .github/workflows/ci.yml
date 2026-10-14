@@ -37,6 +37,11 @@ jobs:
         shell: pwsh
         run: ./tests/smoke.ps1 -BuildDir dist/Bellboard -PromptBudgetMs 10000
 
+      - name: Remote smoke test (pairing, levels, live terminal, revocation)
+        continue-on-error: true
+        shell: pwsh
+        run: ./tests/remote-smoke.ps1 -BuildDir dist/Bellboard
+
       - name: Package (self-contained zip, SHA-256, update feed, winget manifests)
         shell: pwsh
         run: ./build.ps1 -Package -Output dist/package/Bellboard

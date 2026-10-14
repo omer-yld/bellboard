@@ -3,7 +3,7 @@
 #   .\build.ps1 -SelfContained        bundle the .NET runtime (no prerequisites)
 #   .\build.ps1 -Package              self-contained zip + SHA256 + update feed + winget manifests in .\dist
 #   .\build.ps1 -Install              install the build for the current user (PATH, Start menu, Apps & features)
-#   .\build.ps1 -Test -Smoke          unit tests before, end-to-end smoke test after
+#   .\build.ps1 -Test -Smoke          unit tests before, end-to-end smoke tests (app, remote) after
 #   .\build.ps1 -Sign -CertThumbprint <sha1>   Authenticode-sign Bellboard's binaries (needs a code-signing cert)
 param(
     [string]$Configuration = "Release",
@@ -27,7 +27,7 @@ try {
     }
 
     $sc = if ($SelfContained) { "true" } else { "false" }
-    foreach ($proj in "src\Bellboard.App\Bellboard.App.csproj", "src\Bellboard.Cli\Bellboard.Cli.csproj") {
+    foreach ($proj in "src\Bellboard.App\Bellboard.App.csproj", "src\Bellboard.Cli\Bellboard.Cli.csproj", "src\Bellboard.Remote\Bellboard.Remote.csproj") {
         dotnet publish $proj -c $Configuration -o $Output --self-contained $sc -nologo
         if ($LASTEXITCODE) { throw "build failed: $proj" }
     }
@@ -41,7 +41,7 @@ try {
         $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Select-Object -First 1
         if (-not $signtool) { throw "signtool.exe not found (install the Windows SDK)" }
-        $files = Get-ChildItem $Output -Include Bellboard.exe, Bellboard.dll, bell.exe, bell.dll -Recurse
+        $files = Get-ChildItem $Output -Include Bellboard.exe, Bellboard.dll, bell.exe, bell.dll, bellboard-remote.exe, bellboard-remote.dll -Recurse
         & $signtool.FullName sign /sha1 $CertThumbprint /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $files.FullName
         if ($LASTEXITCODE) { throw "signing failed" }
     }
@@ -107,6 +107,8 @@ ManifestVersion: 1.6.0
     if ($Smoke) {
         & (Join-Path $PSScriptRoot "tests\smoke.ps1") -BuildDir $Output
         if ($LASTEXITCODE) { throw "smoke test failed" }
+        & (Join-Path $PSScriptRoot "tests\remote-smoke.ps1") -BuildDir $Output
+        if ($LASTEXITCODE) { throw "remote smoke test failed" }
     }
     if ($Install) {
         & (Join-Path $Output "install.ps1") -Source $Output

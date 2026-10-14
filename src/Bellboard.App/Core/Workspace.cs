@@ -365,8 +365,12 @@ public sealed class Workspace : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         foreach (var stack in Stacks) stack.RefreshHeader();
         if (IsSelected) Refreshed?.Invoke(this);
+        Changed?.Invoke(this);
     }
 
     /// <summary>Raised after a refresh of the selected workspace (drives the window title).</summary>
     public static event Action<Workspace>? Refreshed;
+
+    /// <summary>Raised after any workspace refreshes (drives the remote phone view's state).</summary>
+    public static event Action<Workspace>? Changed;
 }

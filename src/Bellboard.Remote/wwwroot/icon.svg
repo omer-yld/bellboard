@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256">
+  <!-- Bellboard mark: a brass bell with a terminal prompt, and the blue clapper of a ringing pane. -->
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#252A35"/><stop offset="1" stop-color="#15181E"/></linearGradient><linearGradient id="brass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FAC45A"/><stop offset="1" stop-color="#EE971C"/></linearGradient></defs>
+  <rect x="2" y="2" width="60" height="60" rx="13" fill="url(#tile)"/>
+  <path d="M16 45C19 42 19.5 38 19.5 31C19.5 21.5 25 15.5 32 15.5C39 15.5 44.5 21.5 44.5 31C44.5 38 45 42 48 45ZM15.25 44H48.75A2.25 2.25 0 0 1 48.75 48.5H15.25A2.25 2.25 0 0 1 15.25 44ZM32 9.8A2.8 2.8 0 1 1 32 15.4A2.8 2.8 0 1 1 32 9.8Z" fill="url(#brass)"/>
+  <path d="M25.6 25.6L30.4 30.2L25.6 34.8" fill="none" stroke="#1A1E26" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M33.6 35H38.6" fill="none" stroke="#1A1E26" stroke-width="3.4" stroke-linecap="round"/>
+  <circle cx="32" cy="53.4" r="3.9" fill="#4C8DFF"/>
+</svg>

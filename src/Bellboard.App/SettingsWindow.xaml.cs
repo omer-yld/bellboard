@@ -91,6 +91,7 @@ public partial class SettingsWindow : Window
         BuildWorkspaces();
         BuildNotifications();
         BuildBrowser();
+        BuildRemote();
         BuildKeyboard();
 
         Loaded += (_, _) =>

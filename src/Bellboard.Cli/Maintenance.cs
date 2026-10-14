@@ -87,7 +87,7 @@ internal static class Maintenance
             $ErrorActionPreference = 'Stop'
             $install = '{{InstallDir.Replace("'", "''")}}'
             $deadline = (Get-Date).AddSeconds(30)
-            while ((Get-Process Bellboard, bell -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($install, [StringComparison]::OrdinalIgnoreCase) }) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+            while ((Get-Process Bellboard, bell, bellboard-remote -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($install, [StringComparison]::OrdinalIgnoreCase) }) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
             Copy-Item '{{files.Replace("'", "''")}}\*' $install -Recurse -Force
             if ({{(wasRunning ? "$true" : "$false")}}) { Start-Process (Join-Path $install 'Bellboard.exe') }
             Start-Sleep -Seconds 1

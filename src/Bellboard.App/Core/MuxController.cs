@@ -25,6 +25,12 @@ public sealed class MuxController
     public TerminalViewPool TerminalPool { get; private set; } = null!;
     public ShellPool Shells { get; private set; } = null!;
     public AgentManager Agents { get; }
+    /// <summary>State changes pushed to pipe subscribers (the remote sidecar, `bell events`).</summary>
+    public EventHub Events { get; private set; } = null!;
+    /// <summary>Claude Code permission requests waiting for an answer from a phone.</summary>
+    public PromptBroker Prompts { get; }
+    /// <summary>Bellboard Remote: the phone view's sidecar, paired devices, away detection.</summary>
+    public RemoteHost Remote { get; private set; } = null!;
     private string? _fontStack;
     /// <summary>Effective terminal font stack (config + Windows Terminal font + Nerd Font fallback).</summary>
     public string FontStack => _fontStack ??= FontDetector.Resolve(Config.FontFamily, BellboardConfig.DefaultFontStack);
@@ -48,6 +54,7 @@ public sealed class MuxController
         Config = config;
         PipeName = pipeName;
         Agents = new AgentManager(this);
+        Prompts = new PromptBroker(this);
         Workspaces.CollectionChanged += (_, _) =>
         {
             for (int i = 0; i < Workspaces.Count; i++)
@@ -65,6 +72,8 @@ public sealed class MuxController
         TerminalPool = new TerminalViewPool(Window.WarmHost,
             () => System.Drawing.ColorTranslator.FromHtml(Config.Theme["background"]));
         Shells = new ShellPool(this);
+        Events = new EventHub(this, Window.Dispatcher);
+        Remote = new RemoteHost(this, Window.Dispatcher);
     }
 
     /// <summary>Apply new settings to the running app (from the Settings window or a config.json edit).</summary>
@@ -79,6 +88,8 @@ public sealed class MuxController
             if (pane is TerminalPane t) t.ApplyConfig();
         }
         if (!Config.PrestartShell) Shells.Dispose();
+        Remote.Apply();
+        Events.MarkDirty();
         Log.Info("settings applied");
     }
 
@@ -947,5 +958,6 @@ public sealed class MuxController
         Shells?.Dispose();
         foreach (var p in Workspaces.SelectMany(w => w.Panes).ToList()) p.Dispose();
         Notifications?.Dispose();
+        Remote?.Dispose();
     }
 }

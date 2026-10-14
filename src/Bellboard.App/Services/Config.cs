@@ -65,6 +65,8 @@ public sealed class BellboardConfig
     /// <summary>"inherit" (the focused terminal's folder), "home", or a folder path.</summary>
     public string NewWorkspaceDirectory { get; set; } = "inherit";
     public Dictionary<string, string> Theme { get; set; } = DefaultTheme();
+    /// <summary>Bellboard Remote: the phone view (Settings › Remote).</summary>
+    public RemoteConfig Remote { get; set; } = new();
 
     public static string Dir { get; } = BellboardProtocol.RoamingDataDir;
     public static string FilePath => Path.Combine(Dir, "config.json");
@@ -117,6 +119,7 @@ public sealed class BellboardConfig
                     cfg.ThemeName = "Bellboard Dark";
                 }
                 foreach (var kv in DefaultTheme()) cfg.Theme.TryAdd(kv.Key, kv.Value);
+                cfg.Remote ??= new RemoteConfig();
                 // 0.1.0 wrote Google as the default home page; the start page replaces it.
                 if (cfg.HomeUrl == "https://www.google.com") cfg.HomeUrl = null;
                 return cfg;
@@ -169,3 +172,24 @@ public sealed class BellboardConfig
         && theme.TryGetValue("foreground", out var fg) && fg.Equals("#d7dae0", StringComparison.OrdinalIgnoreCase)
         && theme.TryGetValue("blue", out var blue) && blue.Equals("#61afef", StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>Bellboard Remote settings ("remote" in config.json).</summary>
+public sealed class RemoteConfig
+{
+    /// <summary>Run the remote sidecar (bellboard-remote.exe). Off by default: nothing listens until you turn it on.</summary>
+    public bool Enabled { get; set; }
+    /// <summary>"tailscale" (127.0.0.1, published with `tailscale serve`), "local" (127.0.0.1, your own tunnel) or "lan" (HTTPS on every interface).</summary>
+    public string Mode { get; set; } = "tailscale";
+    public int Port { get; set; } = 17821;
+    /// <summary>The address phones open, e.g. https://pc.tailnet.ts.net (filled in by the Tailscale setup).</summary>
+    public string? Url { get; set; }
+    /// <summary>Web Push notifications to paired phones when they aren't looking.</summary>
+    public bool Push { get; set; } = true;
+    /// <summary>Put the agent's message in push notifications (off: "Needs your input").</summary>
+    public bool PushText { get; set; }
+    /// <summary>Claude Code permission requests go to the phone: "away" (when you're not at the desk), "always" or "off".</summary>
+    public string AnswerPrompts { get; set; } = "away";
+    /// <summary>Minutes without Bellboard in the foreground before you count as away (a locked screen counts at once).</summary>
+    public int AwayMinutes { get; set; } = 5;
+}
+

@@ -147,6 +147,15 @@
         case 'o':
           term.write(m.d);
           break;
+        case 'snap':
+          // A remote viewer is attaching: serialize once every chunk posted before this message is parsed.
+          if (!term) { post({ t: 'snap', id: m.id, data: '', cols: 80, rows: 24 }); break; }
+          term.write('', () => {
+            let data = '';
+            try { data = serializer.serialize({ scrollback: m.rows, excludeAltBuffer: false, excludeModes: false }); } catch (_) { }
+            post({ t: 'snap', id: m.id, data, cols: term.cols, rows: term.rows });
+          });
+          break;
         case 'paste':
           term.paste(m.d);
           term.focus();

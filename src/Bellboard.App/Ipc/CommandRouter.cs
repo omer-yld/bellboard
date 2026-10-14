@@ -20,7 +20,15 @@ public sealed class CommandRouter
 
     public CommandRouter(MuxController mux) => _mux = mux;
 
-    public async Task<JsonNode?> HandleAsync(string method, JsonObject p)
+    public async Task<JsonNode?> HandleAsync(string method, JsonObject p, PipeConnection? conn = null)
+    {
+        var device = CheckRemote(method, p, conn);
+        if (device != null) return await HandleRemoteAsync(method, p, conn!, device);
+        if (RemoteCommands.IsSidecarMethod(method)) return await new RemoteCommands(_mux).SidecarAsync(method, p);
+        return await HandleLocalAsync(method, p, conn);
+    }
+
+    private async Task<JsonNode?> HandleLocalAsync(string method, JsonObject p, PipeConnection? conn)
     {
         switch (method)
         {
@@ -324,6 +332,10 @@ public sealed class CommandRouter
                 _mux.Window.ActivateFromTray();
                 _mux.Window.OpenPalette(Str(p, "query") ?? "");
                 return true;
+            case "dev.settings" when App.DevMode:
+                // Opens Settings without waiting for it to close (the dialog is modal), for screenshots.
+                _ = _mux.Window.Dispatcher.BeginInvoke(() => _mux.Window.OpenSettings(Str(p, "section")));
+                return true;
             case "dev.unload" when App.DevMode:
                 await _mux.UnloadIdleAsync(force: true, only: Workspace(p));
                 return new JsonObject { ["unloaded"] = Workspace(p).Panes.OfType<TerminalPane>().Count(t => t.Unloaded) };
@@ -445,15 +457,7 @@ public sealed class CommandRouter
                     };
                 }).ToArray());
             case "agent.inbox":
-                return new JsonArray(Inbox.Build(_mux).Select(r => (JsonNode)new JsonObject
-                {
-                    ["pane"] = r.Pane.Id, ["workspace"] = r.Pane.Workspace.Id, ["title"] = r.Title, ["status"] = r.Status,
-                    ["since"] = r.Since == default ? null : r.Since.ToString("o"), ["message"] = r.Message, ["where"] = r.Where,
-                    ["feed"] = r.Pane is TerminalPane { Feed: true },
-                    ["agent"] = r.Pane is TerminalPane { Agent: { } running } ? AgentManager.DisplayName(running.Kind)
-                        : r.Pane.Workspace.AgentTask is { } task ? AgentManager.DisplayName(task.Agent) : null,
-                    ["workspaceName"] = r.Pane.Workspace.Name,
-                }).ToArray());
+                return StateJson.Inbox(_mux);
             case "agent.info":
             {
                 var ws = Workspace(p);
@@ -505,6 +509,74 @@ public sealed class CommandRouter
             // ---- agent hooks ----
             case "agent.hook":
                 return AgentHook(p);
+            case "agent.permission":
+            {
+                // `bell hook claude PermissionRequest`: wait for the phone while you're away, else no decision.
+                if (_mux.FindPane(Str(p, "pane")) is not TerminalPane pane) return new JsonObject { ["decision"] = null };
+                var wait = TimeSpan.FromSeconds(Math.Clamp(Int(p, "wait", 3540), 1, 86_400));
+                var decision = await _mux.Prompts.RequestAsync(pane, p["payload"] as JsonObject, wait);
+                return new JsonObject { ["decision"] = decision };
+            }
+
+            // ---- answering agents (desktop CLI and the phone) ----
+            case "agent.prompt":
+                return PromptJson(Terminal(p), await Terminal(p).ReadAsync(30));
+            case "agent.answer":
+                return await AnswerAsync(p, "the CLI");
+            case "agent.recent-repos":
+                return RecentRepos();
+            case "notification.read":
+            {
+                if (Str(p, "id") is { } nid)
+                {
+                    var n = _mux.Notifications.Items.FirstOrDefault(x => x.Id == nid) ?? throw new InvalidOperationException($"no notification '{nid}'");
+                    _mux.Notifications.MarkRead(n.Pane);
+                }
+                else _mux.Notifications.MarkRead(Pane(p));
+                return true;
+            }
+            case "state.get":
+                return StateJson.Remote(_mux);
+
+            // ---- subscriptions (`bell events`, `bell attach`, the remote sidecar) ----
+            case "events.subscribe":
+            {
+                if (conn == null) throw new InvalidOperationException("subscriptions need a pipe connection");
+                var topics = (p["topics"] as JsonArray)?.Select(t => (string?)t ?? "").ToList() ?? Services.EventHub.Topics.ToList();
+                var sub = _mux.Events.Subscribe(conn, topics);
+                if (topics.Contains("state")) _mux.Events.MarkDirty();
+                return new JsonObject { ["sub"] = sub };
+            }
+            case "terminal.attach":
+            {
+                if (conn == null) throw new InvalidOperationException("subscriptions need a pipe connection");
+                var t = Terminal(p);
+                TerminalMirror? mirror = null;
+                var sub = conn.AddSubscription(() => t.DetachMirror(mirror!));
+                mirror = new TerminalMirror((ev, data) => conn.Push(sub, ev, data));
+                _ = t.AttachMirrorAsync(mirror, Int(p, "scrollback", 2000));
+                return new JsonObject { ["sub"] = sub, ["pane"] = t.Id };
+            }
+            case "unsubscribe":
+                return conn != null && Str(p, "sub") is { } endSub && conn.EndSubscription(endSub);
+            case "terminal.fit":
+            {
+                var t = Terminal(p);
+                if (Bool(p, "off", false)) t.EndFit();
+                else
+                {
+                    if (!_mux.Remote.DeskIdle && !Bool(p, "force", false))
+                        throw new InvalidOperationException("someone is using Bellboard at the desk; the terminal keeps its desktop size");
+                    t.Fit(Int(p, "cols", 80), Int(p, "rows", 24));
+                }
+                var size = t.SizeText.Split('x');
+                return new JsonObject { ["pane"] = t.Id, ["cols"] = int.Parse(size[0]), ["rows"] = int.Parse(size[1]), ["fitted"] = t.Fitted };
+            }
+
+            // ---- Bellboard Remote, from the CLI (`bell remote …`) ----
+            case "remote.status" or "remote.enable" or "remote.disable" or "remote.pair-code" or "remote.devices" or "remote.revoke"
+                or "remote.level" or "remote.rename" or "remote.tailscale" or "remote.set":
+                return await new RemoteCommands(_mux).LocalAsync(method, p);
 
             // ---- browser ----
             case "browser.open":
@@ -588,32 +660,11 @@ public sealed class CommandRouter
         }
     }
 
-    private JsonObject ListWorkspaces()
+    private JsonObject ListWorkspaces() => new()
     {
-        var arr = new JsonArray();
-        int i = 0;
-        foreach (var ws in _mux.Workspaces)
-        {
-            i++;
-            arr.Add(new JsonObject
-            {
-                ["id"] = ws.Id,
-                ["index"] = i,
-                ["name"] = ws.Name,
-                ["selected"] = ws == _mux.Selected,
-                ["cwd"] = ws.Cwd,
-                ["branch"] = ws.Branch,
-                ["ports"] = JsonSerializer.SerializeToNode(ws.Ports),
-                ["unread"] = ws.Unread,
-                ["notice"] = ws.LastNotice,
-                ["muted"] = ws.Muted,
-                ["pinned"] = ws.Pinned,
-                ["status"] = ws.HasAgent ? ws.AgentText : null,
-                ["panes"] = new JsonArray(ws.Panes.Select(pn => JsonSerializer.SerializeToNode(pn.Describe())).ToArray()),
-            });
-        }
-        return new JsonObject { ["selected"] = _mux.Selected?.Id, ["workspaces"] = arr };
-    }
+        ["selected"] = _mux.Selected?.Id,
+        ["workspaces"] = new JsonArray(_mux.Workspaces.Select(ws => (JsonNode)StateJson.Workspace(ws, _mux)).ToArray()),
+    };
 
     private JsonNode? AgentHook(JsonObject p)
     {
@@ -623,6 +674,11 @@ public sealed class CommandRouter
         var payload = p["payload"] as JsonObject;
         var sid = (string?)payload?["session_id"] ?? pane.Agent?.SessionId ?? pane.RestoreAgent?.SessionId;
         var title = pane.DisplayTitle;
+
+        // The agent moved on: a permission request still waiting for the phone was answered in the terminal.
+        // (Claude's permission_prompt notification arrives while the request is still open, so it doesn't count.)
+        bool askingNow = ev is "Notification" && (string?)payload?["notification_type"] == "permission_prompt";
+        if (!askingNow && _mux.Prompts.For(pane) != null) _mux.Prompts.CancelFor(pane);
 
         if (agent == "claude")
         {
@@ -642,7 +698,8 @@ public sealed class CommandRouter
                     break;
                 case "Stop":
                     var done = title != null ? $"Finished: {title.TrimStart('✳', '*', ' ')}" : "Finished — ready for your next prompt";
-                    pane.Agent = new AgentInfo("claude", sid, "done", DateTime.Now, done);
+                    // The card (inbox, phone) shows what Claude said last; the notification stays "Finished: …".
+                    pane.Agent = new AgentInfo("claude", sid, "done", DateTime.Now, Clip((string?)payload?["last_assistant_message"]) ?? done);
                     _mux.Notifications.Post(pane, "Claude Code", done, "claude");
                     break;
                 case "SessionEnd":
@@ -716,6 +773,192 @@ public sealed class CommandRouter
 
     private static string? Clip(string? s) =>
         s == null ? null : (s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim()).Length > 160 ? s[..159] + "…" : s;
+
+    // ---- remote access ----
+
+    /// <summary>
+    /// Calls from the remote sidecar name the device they act for ("remoteDevice"). Returns that device, or null
+    /// for an ordinary local call. The sidecar checks levels too; this is the second, independent check.
+    /// </summary>
+    private RemoteDevice? CheckRemote(string method, JsonObject p, PipeConnection? conn)
+    {
+        bool fromSidecar = conn != null && conn.ClientPid != 0 && conn.ClientPid == _mux.Remote.SidecarPid;
+        var deviceId = Str(p, "remoteDevice");
+        if (deviceId == null)
+        {
+            if (fromSidecar && !RemoteCommands.IsSidecarMethod(method) && method is not ("events.subscribe" or "unsubscribe" or "state.get" or "system.ping"))
+                throw new InvalidOperationException($"bellboard-remote must say which device '{method}' is for");
+            if (!fromSidecar && RemoteCommands.IsSidecarMethod(method))
+                throw new InvalidOperationException($"'{method}' is only for bellboard-remote");
+            return null;
+        }
+        if (!fromSidecar) throw new InvalidOperationException("only bellboard-remote can act for a remote device");
+        var device = _mux.Remote.Devices.Find(deviceId) ?? throw new InvalidOperationException("this device isn't paired anymore");
+        if (!RemotePolicy.Allows(device.Level, method)) throw new InvalidOperationException(RemotePolicy.Refusal(method));
+        p.Remove("remoteDevice");
+        p.Remove("caller"); // a phone never acts "from" a pane
+        return device;
+    }
+
+    private async Task<JsonNode?> HandleRemoteAsync(string method, JsonObject p, PipeConnection conn, RemoteDevice device)
+    {
+        var who = device.Name + " (remote)";
+        bool full = device.Level == RemotePolicy.Full;
+        switch (method)
+        {
+            case "terminal.send":
+            case "terminal.send-key":
+            {
+                if (Str(p, "pane") == null) throw new InvalidOperationException("say which pane");
+                var t = Terminal(p);
+                if (!full && !IsAgentPane(t)) throw new InvalidOperationException("needs full access to type into a pane without an agent");
+                if ((Str(p, "text")?.Length ?? 0) > RemotePolicy.MaxSendChars) throw new InvalidOperationException($"at most {RemotePolicy.MaxSendChars} characters at a time");
+                var result = await HandleLocalAsync(method, p, conn);
+                RemoteLog(t, method == "terminal.send" ? $"typed {Describe(Str(p, "text"))} from {who}" : $"pressed {string.Join(" ", (p["keys"] as JsonArray)?.Select(k => (string?)k) ?? [])} from {who}");
+                return result;
+            }
+            case "agent.answer":
+            {
+                var t = Terminal(p);
+                if (!full && !IsAgentPane(t)) throw new InvalidOperationException("needs full access to answer in a pane without an agent");
+                if ((Str(p, "text")?.Length ?? 0) > RemotePolicy.MaxSendChars) throw new InvalidOperationException($"at most {RemotePolicy.MaxSendChars} characters at a time");
+                return await AnswerAsync(p, who);
+            }
+            case "terminal.attach":
+            {
+                var result = await HandleLocalAsync(method, p, conn);
+                return result;
+            }
+            case "agent.new":
+            {
+                var result = await HandleLocalAsync(method, p, conn);
+                if (_mux.FindWorkspace((string?)result?["workspace"]) is { } ws) ws.Logs.Add(new LogEntry(DateTime.Now, "info", $"started from {who}"));
+                return result;
+            }
+            case "agent.finish":
+            {
+                var ws = Workspace(p);
+                Log.Info($"remote: {who} finishes {ws.Name} ({Str(p, "mode")})");
+                return await HandleLocalAsync(method, p, conn);
+            }
+            case "terminal.fit":
+            {
+                var result = await HandleLocalAsync(method, p, conn);
+                return result;
+            }
+            case "state.get":
+                return StateJson.Remote(_mux);
+            default:
+                return await HandleLocalAsync(method, p, conn);
+        }
+    }
+
+    /// <summary>
+    /// A pane with a live agent session (reported by its hooks). Not "any pane of an agent workspace": once the agent
+    /// exits, its pane is a plain shell, and a respond-level phone mustn't type into that.
+    /// </summary>
+    private static bool IsAgentPane(TerminalPane t) => !t.Feed && t.Agent != null;
+
+    private static string Describe(string? text) =>
+        text == null ? "nothing" : text.Length <= 40 && !text.Contains('\n') ? $"\"{text.TrimEnd('\r')}\"" : $"{text.Length} characters";
+
+    private static void RemoteLog(PaneBase pane, string text)
+    {
+        pane.Workspace.Logs.Add(new LogEntry(DateTime.Now, "info", text));
+        pane.Workspace.Refresh();
+        RemoteCommands.Audit(text + $" [{pane.Id}]");
+    }
+
+    private JsonObject PromptJson(TerminalPane t, string screen)
+    {
+        var parsed = PromptParser.Parse(screen);
+        return new JsonObject
+        {
+            ["pane"] = t.Id,
+            ["hash"] = PromptParser.Hash(screen),
+            ["text"] = screen,
+            ["question"] = parsed?.Question,
+            ["choices"] = new JsonArray((parsed?.Choices ?? new()).Select(c => (JsonNode)new JsonObject
+            {
+                ["key"] = c.Key, ["label"] = c.Label, ["selected"] = c.Selected,
+            }).ToArray()),
+            ["pending"] = _mux.Prompts.For(t) is { } q ? StateJson.Prompt(q) : null,
+        };
+    }
+
+    /// <summary>agent.answer: a structured permission decision, a numbered choice on screen, or text.</summary>
+    private async Task<JsonNode?> AnswerAsync(JsonObject p, string who)
+    {
+        var t = Terminal(p);
+        if (Str(p, "promptId") is { } promptId)
+        {
+            var q = _mux.Prompts.Find(promptId);
+            if (q == null || q.Pane != t) throw new InvalidOperationException("that question was already answered");
+            if (!_mux.Prompts.Resolve(promptId, Str(p, "decision") ?? "", Str(p, "message"), who))
+                throw new InvalidOperationException("that question was already answered");
+            RemoteCommands.Audit($"{Str(p, "decision")} {q.Tool} from {who} [{t.Id}]");
+            return new JsonObject { ["answered"] = true };
+        }
+        if (Str(p, "choice") is { } choice)
+        {
+            if (choice.Length != 1 || !char.IsAsciiDigit(choice[0])) throw new InvalidOperationException("choice must be a number 1-9");
+            var screen = await t.ReadAsync(30);
+            if (Str(p, "hash") is { } hash && hash != PromptParser.Hash(screen))
+                throw new InvalidOperationException("the screen changed; look again");
+            var parsed = PromptParser.Parse(screen);
+            if (parsed == null || parsed.Choices.All(c => c.Key != choice)) throw new InvalidOperationException($"there's no option {choice} on the screen");
+            t.SendText(choice);
+            RemoteLog(t, $"chose {choice}. {parsed.Choices.First(c => c.Key == choice).Label} from {who}");
+            return new JsonObject { ["answered"] = true, ["choice"] = choice };
+        }
+        if (Str(p, "text") is { } text)
+        {
+            t.SendText(text);
+            if (Bool(p, "enter", true))
+            {
+                // Agent TUIs treat a paste followed at once by Enter as a newline in the paste: press Enter separately.
+                await Task.Delay(60);
+                t.SendText("\r");
+            }
+            RemoteLog(t, $"replied {Describe(text)} from {who}");
+            return new JsonObject { ["answered"] = true };
+        }
+        throw new InvalidOperationException("answer with promptId + decision, choice, or text");
+    }
+
+    private JsonArray RecentRepos()
+    {
+        var paths = new List<string>();
+        foreach (var ws in _mux.Workspaces)
+            if (ws.AgentTask is { } at) paths.Add(at.Repo);
+        paths.AddRange(_mux.RecentDirs);
+        var repos = new List<string>();
+        foreach (var dir in paths)
+        {
+            var root = GitRoot(dir);
+            if (root != null && !repos.Contains(root, StringComparer.OrdinalIgnoreCase)) repos.Add(root);
+        }
+        return new JsonArray(repos.Take(20).Select(r => (JsonNode)new JsonObject
+        {
+            ["path"] = r,
+            ["name"] = System.IO.Path.GetFileName(r.TrimEnd('\\', '/')),
+        }).ToArray());
+    }
+
+    private static string? GitRoot(string dir)
+    {
+        try
+        {
+            for (var d = new System.IO.DirectoryInfo(dir); d != null; d = d.Parent)
+            {
+                // A worktree has a .git file pointing elsewhere: agent worktrees aren't repos to start from.
+                if (System.IO.Directory.Exists(System.IO.Path.Combine(d.FullName, ".git"))) return d.FullName;
+                if (System.IO.File.Exists(System.IO.Path.Combine(d.FullName, ".git"))) return null;
+            }
+        }
+        catch { }
+        return null;
+    }
 
     // ---- target resolution ----
 

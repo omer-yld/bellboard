@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>bellboard-remote</AssemblyName>
+    <AssemblyTitle>Bellboard Remote</AssemblyTitle>
+    <RootNamespace>Bellboard.Remote</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- No appsettings.json, launchSettings or static web assets: everything the server needs is in the exe. -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bellboard.Tests" />
+    <Compile Include="..\Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+    <!-- The phone app, served from the exe itself. -->
+    <EmbeddedResource Include="wwwroot\**\*" LogicalName="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- The same xterm.js build the desktop terminal uses. -->
+    <EmbeddedResource Include="..\Bellboard.App\web\vendor\xterm.js;..\Bellboard.App\web\vendor\xterm.css;..\Bellboard.App\web\vendor\addon-unicode11.js"
+                      LogicalName="wwwroot/vendor/%(Filename)%(Extension)" />
+    <None Remove="PROTOCOL.md" />
+  </ItemGroup>
+
+</Project>
