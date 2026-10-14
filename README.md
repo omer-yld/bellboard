@@ -109,13 +109,15 @@ itself, made for phones (add it to the Home Screen and it behaves like an app):
 - With full access: start a new agent on a repo, or finish one (merge, PR, keep, discard).
 
 ```powershell
-bell remote tailscale       # publish it on your tailnet: https://<pc>.<tailnet>.ts.net
+bell remote tailscale       # publish it on your tailnet: https://<pc>.<tailnet>.ts.net:17821
 bell remote pair            # a QR code for your phone (the code works once, for 2 minutes)
 bell remote devices         # paired devices; bell remote level <id> view|respond|full; bell remote revoke <id>
 ```
 
 Or use **Settings › Remote** (`Ctrl+,`). You need [Tailscale](https://tailscale.com/download) on the PC and the
-phone, signed in to the same account, with HTTPS certificates enabled for the tailnet. If you'd rather use your
+phone, signed in to the same account, with HTTPS certificates enabled for the tailnet. Bellboard publishes on
+its own port (17821, `remote.port`) and leaves anything else you serve with `tailscale serve` alone: it won't
+take a port another app uses, and `bell remote tailscale off` removes only its own. If you'd rather use your
 own tunnel (Cloudflare Tunnel, a reverse proxy), choose **My own tunnel**: Bellboard listens on `127.0.0.1` only.
 **Local network** mode serves HTTPS on your LAN with a self-signed certificate (no notifications on iPhone).
 

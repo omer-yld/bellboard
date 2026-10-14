@@ -104,7 +104,7 @@ public partial class SettingsWindow
                     _remoteReach.Text = "Tailscale: " + err + (st.Running ? "\nIf HTTPS certificates are off for your tailnet, turn them on in the Tailscale admin console (DNS › HTTPS Certificates)." : "");
                     return;
                 }
-                cfg.Url = st.Url;
+                cfg.Url = Tailscale.UrlFor(st.DnsName!, cfg.Port);
                 Changed();
                 Later(UpdateRemote);
             };
